@@ -1,0 +1,40 @@
+
+Genetic Algorithm, is meta-heuristic search algorithm,
+where the search process emulates natural evolution.
+
+We begin with a population of n individuals, each randomly generated
+from a uniform distribution.
+
+At each iteration cycle:
+    1) We select k individuals where k <= n, the selection may be done randomly
+        or following a special algorithm in this case
+        fitness proportionate selection or roulette-wheel selection
+    2) We apply genetic operators such as:
+        - crossover
+            swap portion(s) from each parents chromosome to create a new member.
+        - mutation
+            flip certain portions of a members chromosome.
+    3) repeat step two until we have generated enough members to constitute a new population.
+    4) check if new population has a member that meets our ending criteria,
+        if not repeat until so, or computational resources exhausted.
+
+
+For the n-queens problem, we take our n-by-n matrix of 0 and 1s and simply generate
+a population of possible solutions, for each possible solution measure
+the normalize fitness value (collisions) as prescribed by the roulette-wheel selection
+algorithm, we select a subset of the population for crossbreeding and mutations.
+
+Mutations occur with a probability of .1, while crossbreeding is at .9.
+Mutations are implemented as a column swap very similar to simulated annealing.
+
+Cross breeding is a bit trickier, the main issue is that each chromosome has to be unique,
+if we arbitrary take chromosomes from each parent than we may loose this uniqueness.
+Instead we take a chromosome from either parent with a probability .5, but if this
+chromosome is already present check the other parent, if also present, then
+just select one at random from the available set.
+
+
+
+
+
+

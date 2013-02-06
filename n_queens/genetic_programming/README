@@ -1,0 +1,22 @@
+
+Genetic Programming, is a meta-heuristic search algorithm, inspired by biological evolution,
+that searches for computer programs, that can solve a defined task.
+
+This is somewhat similar to genetic algorithms, and in fact it is!; buts its considered
+a 'specialization' of genetic algorithms, with the exception being that
+each member now is a computer program.
+
+The same rules still apply, population -> selection -> crossbreeding -> repeat ...
+
+This time around we are not looking for a computer program, where
+a computer program can be defined as a set of operator and operands, usually visualized
+as a tree.
+
+But for the n-queens problem we really don't need to use a tree,
+basically we start with a random solution and we look for a sequence of column-swaps
+that would transform our initial solution to an optimal solution, using the least
+number of swaps.
+
+Note that we can slightly modify our solution so each program would have its own
+initial random solution, this way they are all decoupled from each other and it
+may be easier to run the program concurrently.

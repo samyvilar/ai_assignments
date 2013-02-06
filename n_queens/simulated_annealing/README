@@ -1,0 +1,52 @@
+
+
+Simulated Annealing, is a meta-heuristic search algorithm,
+where the search process emulates annealing on metals.
+
+
+Well we could search for a 'best' solution, by doing the following:
+1) Initially choose a current solution (randomly) and assume its the 'best' solution.
+2) If the best solution has being found either
+because we have exhausted our resources or
+indeed it is our 'best' solution, just return it.
+3) If not, choose a new current solution,
+by simply selecting it at random around our current solution,
+and assume its 'better'.
+4) If indeed it is better then take it.
+5) If not take it anyway with a certain probability.
+6) repeat.
+
+One might ask, why are you jumping to a worse solution,
+even if it is only with a certain probability?
+Informally: To put it simply "we do this to avoid getting stuck in a local minimum".
+
+Formally: we define a function f, called the 'objective function' that measures the
+quality of each solution, where f(solution) >= 0 for all solutions,
+and f(solution) == 0 where solution is our 'best solution'
+and f(solution) > f(better_solution)
+where better solution is closer to our best or ideal solution then solution.
+
+In essence this function creates a surface, we are simply minimizing this function,
+if we only minimize, ie we only take values that increase our objective,
+we may get stuck in a local minimum,
+since we can't really assume anything about this function or surface,
+like it has only one minimum, the global minimum, or all local_minimums == global_minimums,
+we have to assume it has many local_minimums that may not equal our global_minimum,
+as such we have to leave a local minimum, for another local minimum,
+until we hit the local_minimum == global_minimum, or computational resources exhausted.
+
+
+We can represent a solution as a sequence of n numbers each from 0 to n - 1.
+where the ith value represents the column position of a queen in the ith row,
+for performance reasons we will use a n-by-n matrix representing our chess board,
+and a value of 1 to represent a queen, this way we only need to sum up diagnols
+to measure collisions.
+
+We start by randomly placing a queen in each row,
+define our objective function as the number of collisions of a giving solution,
+to this we simply add all the queens in each row, column, left and right diagonals.
+
+Assume this is our best solution, if not look for a better solution, around this solution.
+We do this by simply swapping a column at random.
+
+Repeat until solution found.
