@@ -58,6 +58,9 @@ class Layer(object):
     def _update_weights(self, deltas):
         self.weights += self.learning_rate * deltas
 
+    def _calc_gradient_error(self, forward_layer_errors):
+        return self.activation_function.derivative(f_of_x = self.outputs) * forward_layer_errors
+
 class Input_Layer(Layer):
     def apply_input(self, normalized_input):
         self.inputs = normalized_input
@@ -75,7 +78,7 @@ class Hidden_Layer(Layer):
         return self.outputs
 
     def update_weights(self, forward_layer_errors):
-        gradient_errors = self.activation_function.derivative(f_of_x = self.outputs) * forward_layer_errors # use back-propagated errors to update weights
+        gradient_errors = self._calc_gradient_error(forward_layer_errors)
         self._update_weights(
             numpy.repeat(
                             self.inputs.reshape(1, self.inputs.shape[0]),
@@ -94,8 +97,7 @@ class Output_layer(Layer):
         )
         return self.outputs
     def update_weights(self, forward_layer_errors):
-        target_set, output_set = forward_layer_errors
-        gradient_errors = (target_set - output_set) * self.activation_function.derivative(f_of_x = output_set)
+        gradient_errors = self._calc_gradient_error(forward_layer_errors)
         self._update_weights(self.inputs * gradient_errors)   # Adjust the weights based on the error
 
         return (gradient_errors * self.weights.T).sum(axis = 0) # back-propagate errors to previous layers.
@@ -123,13 +125,13 @@ class Neural_Network(object):
         input_set, target_set = normalized_training_sample[0], normalized_training_sample[1]
         prev_layer_outputs = self._apply_input(input_set)
 
-        forward_layer_errors = (target_set,  prev_layer_outputs)
+        forward_layer_errors = target_set -  prev_layer_outputs
         for layer in reversed(self.layers):
             forward_layer_errors = layer.update_weights(forward_layer_errors)
 
-        return (target_set - prev_layer_outputs)**2
+        return target_set - prev_layer_outputs
 
-    def train(self, training_set, max_number_of_iterations = 100000, allowed_error_threshold = 0.001):
+    def train(self, training_set, max_number_of_iterations = 100000, allowed_error_threshold = 0.0001):
         # Training_set must be a list of 2-tuple containing flatten input and corresponding output data set.
         complete_data_set = numpy.asarray([input_set + output_set for input_set, output_set in training_set])
         self.original_mean, self.original_max = complete_data_set.mean(), complete_data_set.max()
@@ -141,8 +143,8 @@ class Neural_Network(object):
         errors = []
         for iteration_index in xrange(max_number_of_iterations):
             errors.append(
-                numpy.sum(
-                    self.apply_sample((normalized_input_set, normalize_output_training_set[index]))
+                 0.5 * numpy.sum(
+                    self.apply_sample((normalized_input_set, normalize_output_training_set[index]))**2
                         for index, normalized_input_set in enumerate(normalized_input_training_set)
                 )
             )
