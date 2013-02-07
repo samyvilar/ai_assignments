@@ -7,8 +7,11 @@ import urllib2
 import datetime
 import csv
 
-from activation_functions import sigmoid
-from network import Input_Layer, Hidden_Layer, Output_layer, Neural_Network
+from network import \
+    Input_Layer, \
+    Hidden_Layer, \
+    Output_layer, \
+    Neural_Network
 
 def get_stock_history(stock_symbol):
     today_date = datetime.date.today()
@@ -51,26 +54,26 @@ def get_trained_stock_neural_network(stock_prices_training_set):
             number_of_inputs,                   # Number of Neurons
             1,                                  # Number of Inputs per Neuron
             number_of_hidden_neurons,           # Number of Outputs per Neuron
-            lambda value : value),
+            'hyperbolic_tangent'),
 
         Hidden_Layer(
             number_of_hidden_neurons,
             number_of_inputs,
             number_of_outputs,
-            #number_of_hidden_neurons,
-            sigmoid,),
+#            number_of_hidden_neurons,
+            'hyperbolic_tangent',),
 
 #        Hidden_Layer(
 #            number_of_hidden_neurons,
 #            number_of_hidden_neurons,
 #            number_of_outputs,
-#            sigmoid,),
+#            'unipolar_sigmoid',),
 
         Output_layer(
             number_of_outputs,
             number_of_hidden_neurons,
             1,
-            sigmoid,),
+            'hyperbolic_tangent',),
     ]
 
     neural_network = Neural_Network(layers = layers)
@@ -83,9 +86,12 @@ def get_trained_stock_neural_network(stock_prices_training_set):
 
 if __name__ == '__main__':
     stock_symbol = 'aapl'
-    number_of_consecutive_trading_days = 5
+    number_of_consecutive_trading_days = 10
     trading_day_indices_from_today = [0]
-    stock_prices = get_training_set(stock_symbol, number_of_consecutive_trading_days, trading_day_indices_from_today,)
+    stock_prices = get_training_set(
+        stock_symbol,
+        number_of_consecutive_trading_days,
+        trading_day_indices_from_today,)
 
     neural_network = get_trained_stock_neural_network(stock_prices)
 

@@ -1,27 +1,36 @@
 __author__ = 'samyvilar'
 
 import numpy
-import pickle
+
+class unipolar_sigmoid(object):
+    def apply(self, value):
+        return 1.0/(1.0 + (numpy.e**(-value)))
+    def derivative(self, value = None, f_of_x = None):
+        if value is not None:
+            f_of_x = self.apply(value)
+        return (1.0 - f_of_x) * f_of_x
+    def inverse(self, output):
+        return numpy.log(output/(1 - output))
+
+class bipolar_sigmoid(object):
+    def apply(self, value):
+        return -1.0 + (2.0/(1.0 + numpy.e**(-value)))
+    def derivative(self, value = None, f_of_x = None):
+        if value is not None:
+            f_of_x = self.apply(value)
+        return 0.5 * (1.0 + f_of_x)*(1.0 - f_of_x)
+
+class hyperbolic_tangent(object):
+    def apply(self, value):
+        return (numpy.e**value - numpy.e**(-value))/(numpy.e**value + numpy.e**(-value))
+    def derivative(self, value = None, f_of_x = None):
+        if value is not None:
+            f_of_x = self.apply(value)
+        return 1.0 - f_of_x**2
 
 
 def squared_error(exp, calc):
     return (exp - calc)**2
-
-class Neuron(object):
-    def __init__(self,
-                 weights,
-                 evaluation_func,
-                 learning_rate = .5):
-
-        self.weights = weights
-        self.evaluation_func = evaluation_func
-        self.learning_rate = learning_rate
-
-    def calc_output(self, inputs):
-        self.inputs = inputs
-        self.output = self.evaluation_func(numpy.dot(self.inputs, self.weights))
-        return self.output
-
 
 def normalize(data_set, data_set_mean, data_set_max): # normalize around 0
     return (data_set - data_set_mean)/data_set_max
@@ -34,18 +43,21 @@ class Layer(object):
                  number_of_neurons,
                  number_of_inputs_per_neuron,
                  number_of_outputs_per_neuron,
-                 evaluation_function
-    ):     # Add an extra weight for the bias '1'
-        # number_of_inputs_per_neuron += 1 #TODO: Implement Bias, to better work with zero inputs.
+                 activation_function,
+                 learning_rate = 1.0
+    ):
+        #TODO: Implement Bias, to better work with zero inputs.
 
         self.weights = numpy.random.random((number_of_neurons, number_of_inputs_per_neuron)) - 0.5
-        self.neurons = [Neuron(
-                    self.weights[index],
-                    evaluation_function,
-                )
-            for index in xrange(number_of_neurons)
-        ]
         self.number_of_outputs_per_neuron = number_of_outputs_per_neuron
+        self.number_of_inputs_per_neuron = number_of_inputs_per_neuron
+        self.activation_function = globals()[activation_function]()
+
+        self.learning_rate = learning_rate
+
+    def _update_weights(self, deltas):
+        self.weights += self.learning_rate * deltas
+
 class Input_Layer(Layer):
     def apply_input(self, normalized_input):
         self.inputs = normalized_input
@@ -57,36 +69,36 @@ class Input_Layer(Layer):
 class Hidden_Layer(Layer):
     def apply_input(self, normalized_inputs):
         self.inputs = normalized_inputs
-        self.outputs = numpy.asarray(
-            [neuron.calc_output(normalized_inputs)
-                    for index, neuron in enumerate(self.neurons)]
+        self.outputs = self.activation_function.apply(
+            numpy.dot(self.weights, normalized_inputs)
         )
         return self.outputs
 
     def update_weights(self, forward_layer_errors):
-        gradient_errors = self.outputs * (1 - self.outputs) * forward_layer_errors
-        self.weights += gradient_errors.reshape(gradient_errors.size, 1) * self.inputs.reshape(1, self.inputs.size)
-        for index, neuron in enumerate(self.neurons):
-            neuron.weights = self.weights[index]
-        return (gradient_errors * self.weights.T).T.sum(axis = 0)
+        gradient_errors = self.activation_function.derivative(f_of_x = self.outputs) * forward_layer_errors # use back-propagated errors to update weights
+        self._update_weights(
+            numpy.repeat(
+                            self.inputs.reshape(1, self.inputs.shape[0]),
+                            self.weights.shape[0],
+                            axis = 0,
+                    ) * gradient_errors.reshape(gradient_errors.shape[0], 1)
+        )
+        return (gradient_errors * self.weights.T).sum(axis = 0)
 
 
 class Output_layer(Layer):
     def apply_input(self, normalized_inputs):
         self.inputs = normalized_inputs
-        self.outputs = numpy.asarray(
-                [neuron.calc_output(normalized_inputs)
-                    for neuron in self.neurons])
+        self.outputs = self.activation_function.apply(
+            numpy.dot(self.weights, normalized_inputs)
+        )
         return self.outputs
-
     def update_weights(self, forward_layer_errors):
         target_set, output_set = forward_layer_errors
-        gradient_error = (target_set - output_set) * output_set * (1 - output_set)
+        gradient_errors = (target_set - output_set) * self.activation_function.derivative(f_of_x = output_set)
+        self._update_weights(self.inputs * gradient_errors)   # Adjust the weights based on the error
 
-        self.weights += gradient_error * self.inputs
-        for index, neuron in enumerate(self.neurons):
-            neuron.weights = self.weights[index]
-        return (self.weights * gradient_error).sum(axis = 1)
+        return (gradient_errors * self.weights.T).sum(axis = 0) # back-propagate errors to previous layers.
 
 class Neural_Network(object):
     def __init__(self, layers = []):
@@ -118,6 +130,7 @@ class Neural_Network(object):
         return (target_set - prev_layer_outputs)**2
 
     def train(self, training_set, max_number_of_iterations = 100000, allowed_error_threshold = 0.001):
+        # Training_set must be a list of 2-tuple containing flatten input and corresponding output data set.
         complete_data_set = numpy.asarray([input_set + output_set for input_set, output_set in training_set])
         self.original_mean, self.original_max = complete_data_set.mean(), complete_data_set.max()
 
