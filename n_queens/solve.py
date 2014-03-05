@@ -1,5 +1,5 @@
-
-
+#! /usr/bin/env python
+"""
 The n-queens problem, can be described as follows, giving an n-by-n chess board,
 place n queens such as no queen may attack any other queen.
 
@@ -26,7 +26,32 @@ CODE REQUIREMENTS:
 python >= 2.7
 numpy
 matplotlib
+"""
+__author__ = 'samyvilar'
 
+import sys
+import time
 
+import simulated_annealing
+import genetic_algorithm
+import genetic_programming
 
+from utils import calc_collision
 
+if __name__ == '__main__':
+    packages = simulated_annealing, genetic_algorithm, genetic_programming
+    number_of_queens = (len(sys.argv) > 1 and int(sys.argv[1])) or 10
+
+    for package in packages:
+        start = time.time()
+        solution = package.solve_n_queens_problem(number_of_queens)
+        end = time.time()
+        print('algorithm: {algorithm} error: {error} time: {elapse_time}s number_of_queens: {number_of_queens}'.format(
+            algorithm=package.__name__,
+            error=calc_collision(solution),
+            elapse_time=end - start,
+            number_of_queens=number_of_queens,
+        ))
+        print "solution:"
+        print solution
+        print "\n\n"
