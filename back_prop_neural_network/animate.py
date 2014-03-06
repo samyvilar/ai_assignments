@@ -7,31 +7,31 @@ from types import MethodType
 import numpy
 
 
-def initial_plot(input_set, output_set, epoch, relative_error):
+def initial_plot(output_set, epoch, relative_error):
+    plt.figure()
     plt.ion()
-    input_set, output_set = numpy.asarray(input_set).flatten(), numpy.asarray(output_set).flatten()
-    plt.plot(input_set, output_set, 'b*-')
-    line, = plt.plot(input_set, output_set, 'r*--')
+    # input_set, output_set = numpy.asarray(input_set).flatten(), numpy.asarray(output_set).flatten()
+    output_set = numpy.asarray(output_set).flatten()
+    plt.plot(output_set, 'b*-')
+    line, = plt.plot(output_set, 'r*--')
     plt.show()
     return line
 
 
-def update_plot(line, input_set, output_set, epoch, relative_error):
+def update_plot(line, output_set, epoch, relative_error):
     line.set_ydata(output_set)
-    plt.title('Epoch %i, Relative Error %f' % (epoch, relative_error))
+    plt.title('Epoch %i, Neural Network Error %f' % (epoch, relative_error))
     plt.draw()
 
 
 def update_progress(queue):
-    # input_set, output_set, epoch, relative_error = queue.get()
     line = initial_plot(*queue.get())
     while 1:
-        update_plot(line, *queue.get())
-        # input_set, output_set, epoch, relative_error = queue.get()
-        # input_set, output_set = numpy.asarray(input_set).flatten(), numpy.asarray(output_set).flatten()
-        # line.set_ydata(output_set)
-        # plt.title('Epoch %i, Relative Error %f' % (epoch, relative_error))
-        # plt.draw()
+        args = queue.get()
+        if args == 'terminate':
+            plt.ioff()
+            break
+        update_plot(line, *args)
 
 
 class AnimatePlots(object):
@@ -48,7 +48,8 @@ class AnimatePlots(object):
                     return self.line
 
                 def put(self, args):
-                    update_plot(getattr(self, 'get_line', self.initialize_line)(*args), *args)
+                    if args != 'terminate':
+                        update_plot(getattr(self, 'get_line', self.initialize_line)(*args), *args)
 
                 def empty(self):
                     pass
@@ -59,7 +60,5 @@ class AnimatePlots(object):
         self.queue.put(args)
 
     def stop(self):
-        while not self.queue.empty():
-            pass
-        self.process.terminate()
+        self.queue.put('terminate')
 

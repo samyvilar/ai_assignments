@@ -17,15 +17,14 @@ def train(nn, data):
     return nn
 
 
-def get_animated_training(background=False):
+def get_animated_training(dates=(), background=False):
     def animate_training(nn, training_set):
         animated_plot = AnimatePlots(background)
         norm_input_set, norm_output_set = nn.process_training_set(training_set)
         input_set = nn.input_normalization.de_normalize(norm_input_set)
-        animated_plot.update(norm_input_set, nn.output_normalization.de_normalize(norm_output_set), 0, -1)  # original data
-
+        animated_plot.update(nn.output_normalization.de_normalize(norm_output_set), 0, -1)  # original data
         for epoch, rel_error in enumerate(nn.itrain(training_set), 1):
-            animated_plot.update(input_set, map(nn.feed, input_set), epoch, rel_error)
+            animated_plot.update(map(nn.feed, input_set), epoch, rel_error)
         animated_plot.stop()
         return nn
     return animate_training
@@ -146,6 +145,7 @@ def plot(actual_data, predicted_data, end_of_training_point, x_axis, title='', e
         plt.ylabel('Relative Error')
         plt.title('Neural Network Relative Error History')
 
+    plt.ioff()
     plt.show()
 
 
@@ -158,7 +158,6 @@ def main(
     animate=None,
     **kwargs
 ):
-    animate = (animate in {'foreground', 'background'} and get_animated_training(animate == 'background')) or train
     training = training or 20
     end_date = end_date or datetime.today()
     start_date = start_date or end_date - timedelta(days=int((training > 1 and training) or 30))
@@ -168,8 +167,11 @@ def main(
     dates = tuple(reversed(stock_data.date))
     training_set = stock_prices[:int(training > 1 and training or training * len(stock_data.adj_close))]
 
+    animate = (animate in {'foreground', 'background'} and get_animated_training(dates, animate == 'background')) \
+        or train
+
     def _time_series(window_size):
-        neural_network = train_as_time_series(training_set, window_size, **kwargs)
+        neural_network = train_as_time_series(training_set, window_size, animate, **kwargs)
         network_samples = sliding_window(stock_prices, window_size)
         predicted_prices = list(network_samples[0][0])
         predicted_prices.extend(chain.from_iterable(neural_network.feed(inputs) for inputs, _ in network_samples))
@@ -185,7 +187,6 @@ def main(
     def interpolation():
         neural_network = train_as_function_interpolation(training_set, animate, **kwargs)
         predicted_prices = list(chain.from_iterable(imap(neural_network.feed, xrange(len(stock_prices)))))
-
         plot(
             stock_prices,
             predicted_prices,

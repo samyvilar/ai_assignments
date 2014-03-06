@@ -3,7 +3,7 @@ __author__ = 'samyvilar'
 from itertools import izip, starmap, imap, repeat, takewhile
 
 import numpy
-from numpy import square, sqrt, multiply, add, zeros, dot
+from numpy import square, sqrt, multiply, add, zeros, dot, subtract
 
 
 import activation
@@ -52,7 +52,12 @@ class Layer(object):
         """
         self.inputs = normalized_inputs
         return self.activation_function.apply(
-            add(dot(self.weights, self.inputs, self.outputs), self.bias, self.outputs), self.outputs
+            add(
+                dot(self.weights, self.inputs, out=self.outputs),
+                self.bias,
+                out=self.outputs
+            ),
+            out=self.outputs
         )
 
     def update_weights(self, forward_layer_error_signal_factor):
@@ -61,26 +66,21 @@ class Layer(object):
              @forward_layer_error_signal_factor: forward layers error factor as a vector
                 ==> dot(forward_layer.weights.T, forward_layer.gradient)
         """
-        # gradient_of_error_func = forward_layer_error_signal_factor * \
-        #     self.activation_function.derivative(f_of_x=self.outputs) * self.learning_rate
-
         gradient_of_error_func = multiply(
             multiply(self.learning_rate, forward_layer_error_signal_factor, forward_layer_error_signal_factor),
             self.activation_function.derivative(f_of_x=self.outputs, out=self.outputs),
-            self.outputs
+            out=self.outputs
         )
 
         back_propagation_error_factor = dot(self.weights.T, gradient_of_error_func)
 
-        # delta_weights = (gradient_of_error_func.reshape((-1, 1)) * self.inputs) + \
-        #                 (self.previous_weight_update * self.momentum)
-        # self.previous_weight_update = delta_weights     # save delta weights for next cycle ...
-
-        self.previous_weight_update = multiply(self.previous_weight_update, self.momentum, self.previous_weight_update)
+        self.previous_weight_update = multiply(
+            self.previous_weight_update, self.momentum, out=self.previous_weight_update
+        )
         delta_weights = add(
             self.previous_weight_update,
             multiply(gradient_of_error_func.reshape((-1, 1)), self.inputs),
-            self.previous_weight_update
+            out=self.previous_weight_update
         )
 
         self.weights += delta_weights                   # update weights.
@@ -135,28 +135,16 @@ class NeuralNetwork(object):
         _ = reduce(lambda _error_, l: l.update_weights(_error_), self.layers_reversed, error)
         return error
 
-    # def _apply_samples(self, inputs, expected_outputs):  # update weights iteratively ('online training')
-    #     return sqrt(
-    #         sum(  # sum all the errors ...
-    #             imap(
-    #                 square,  # square the error, so they are all positive ...
-    #                 imap(
-    #                     self._update_weights,  # back propagate error ...
-    #                     # get error ...                                              # apply input ...
-    #                     (target - output for target, output in izip(expected_outputs, imap(self._apply_input, inputs)))
-    #                 )
-    #             )
-    #         )
-    #     )
-
     def _apply_samples(self, inputs, expected_outputs):  # update weights iteratively ('online training')
+        def square(values):
+            return starmap(multiply, imap(repeat, values, repeat(2)))
         return sqrt(
             sum(  # sum all the errors ...
                 square(  # square the error, so they are all positive ...
-                    map(
-                        self._update_weights,  # back propagate error ...
+                    imap(
+                        self._update_weights,  # update the weights and back propagate their error ...
                         # get error ...                                              # apply input ...
-                        (target - output for target, output in izip(expected_outputs, imap(self._apply_input, inputs)))
+                        starmap(subtract, izip(expected_outputs, imap(self._apply_input, inputs)))
                     )
                 )
             )

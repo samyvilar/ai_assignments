@@ -57,7 +57,7 @@ class UnipolarSigmoid(ActivationFunction):
 
 
 class BipolarSigmoid(ActivationFunction):
-    def apply(self, x, output=None):
+    def apply(self, x, out=None):
         return -1.0 + (2.0 / (1.0 + numpy.e ** (-x)))
 
     def derivative(self, x=None, f_of_x=None, out=None):
