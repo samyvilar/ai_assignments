@@ -27,6 +27,7 @@ def get_animated_training(background=False):
         for epoch, rel_error in enumerate(nn.itrain(training_set), 1):
             animated_plot.update(input_set, map(nn.feed, input_set), epoch, rel_error)
         animated_plot.stop()
+        return nn
     return animate_training
 
 
@@ -37,13 +38,21 @@ def get_trained_stock_neural_network(
         threshold=.001,
         max_iterations=1000,
         activation='HyperbolicTangent',
-        normalization='Statistical'
+        normalization='Statistical',
+        learning_rate=0.2,
+        momentum=0.2
 ):
     number_of_inputs, number_of_outputs = len(stock_prices_training_set[0][0]), len(stock_prices_training_set[0][1])
 
     layers = (
         InputLayer(number_of_inputs, number_of_inputs_per_neuron=1, activation_function='Identity'),
-        HiddenLayer(hidden_neuron_count, number_of_inputs_per_neuron=number_of_inputs, activation_function=activation),
+        HiddenLayer(
+            hidden_neuron_count,
+            number_of_inputs_per_neuron=number_of_inputs,
+            activation_function=activation,
+            learning_rate=learning_rate,
+            momentum=momentum
+        ),
 
         OutputLayer(                            # The activation function is giving the dot product, so do nothing ...
             number_of_outputs, number_of_inputs_per_neuron=hidden_neuron_count, activation_function='Identity'
@@ -221,6 +230,8 @@ def grab_command_line_arguments():
                         help='Hidden layers Activation function default: HyperbolicTangent')
     parser.add_argument('--normalization', default='Statistical', nargs='?',
                         help='Normalization Class default: Statistical')
+    parser.add_argument('--learning_rate', type=float, default=.2, help='Neural Networks learning rate defaults to 0.2')
+    parser.add_argument('--momentum', type=float, default=.2, help='Momentum Term defaults to 0.2')
 
     main(**vars(parser.parse_args()))
 
