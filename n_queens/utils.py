@@ -24,6 +24,14 @@ def diagonals(a):
     return numpy.lib.stride_tricks.as_strided(stacked, shape, strides)
 
 
+def py_diagonal_collisions(solution):
+    column_axis, row_axis = 0, 1
+    left_diagonal_queens = diagonals(solution).sum(axis=row_axis)
+    right_diagonal_queens = diagonals(numpy.fliplr(solution)).sum(axis=row_axis)
+    return left_diagonal_queens[numpy.where(left_diagonal_queens > 1)].sum() + \
+        right_diagonal_queens[numpy.where(right_diagonal_queens > 1)].sum()
+
+
 try:
     libo = CDLL(os.path.join(os.path.dirname(__file__), 'libcollisions.so'))
     libo.collisions.argtypes = [c_void_p, c_uint]
@@ -33,12 +41,7 @@ try:
         assert solution.dtype == numpy.uint8
         return libo.collisions(c_void_p(solution.ctypes.data), c_uint(solution.shape[0]))
 except OSError as _:
-    def diagonal_collisions(solution):
-        column_axis, row_axis = 0, 1
-        left_diagonal_queens = diagonals(solution).sum(axis=row_axis)
-        right_diagonal_queens = diagonals(numpy.fliplr(solution)).sum(axis=row_axis)
-        return left_diagonal_queens[numpy.where(left_diagonal_queens > 1)].sum() + \
-            right_diagonal_queens[numpy.where(right_diagonal_queens > 1)].sum()
+    diagonal_collisions = py_diagonal_collisions
 
 
 # make sure to properly set the cache size, depending on the the system

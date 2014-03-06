@@ -29,6 +29,8 @@ matplotlib
 """
 __author__ = 'samyvilar'
 
+from itertools import takewhile, imap, repeat, ifilter
+
 import sys
 import time
 
@@ -36,22 +38,31 @@ import simulated_annealing
 import genetic_algorithm
 import genetic_programming
 
-from utils import calc_collision
+from utils import calc_collision, py_diagonal_collisions
+
 
 if __name__ == '__main__':
     packages = simulated_annealing, genetic_algorithm, genetic_programming
-    number_of_queens = (len(sys.argv) > 1 and int(sys.argv[1])) or 10
+    package_names = set(imap(getattr, packages, repeat('__name__')))
+    number_of_queens = 10
+
+    if len(sys.argv) > 1:
+        if sys.argv[1].isdigit():
+            number_of_queens = (len(sys.argv) > 1 and int(sys.argv[1])) or number_of_queens
+        else:
+            selected_packages = tuple(takewhile(package_names.__contains__, sys.argv[1:]))
+            packages = set(imap(globals().__getitem__, selected_packages)) or packages
+            number_of_queens = int(next(ifilter(str.isdigit, sys.argv[len(selected_packages):]), number_of_queens))
 
     for package in packages:
         start = time.time()
         solution = package.solve_n_queens_problem(number_of_queens)
         end = time.time()
+        assert not py_diagonal_collisions(solution)
         print('algorithm: {algorithm} error: {error} time: {elapse_time}s number_of_queens: {number_of_queens}'.format(
             algorithm=package.__name__,
             error=calc_collision(solution),
             elapse_time=end - start,
             number_of_queens=number_of_queens,
         ))
-        print "solution:"
-        print solution
-        print "\n\n"
+        print("solution: \n{0}\n\n".format(solution))

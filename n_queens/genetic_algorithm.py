@@ -62,7 +62,7 @@ def genetic_algorithm(
             print("improved solution found @iteration: {iteration} new error {new_error}".format(
                 iteration=max_iteration - max_number_of_iterations, new_error=smallest_error
             ))
-
+    print('total iterations: {0}'.format(max_iteration - max_number_of_iterations))
     return population[0]
 
 

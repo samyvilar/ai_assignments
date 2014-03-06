@@ -1,20 +1,13 @@
 __author__ = 'samyvilar'
 
-from itertools import izip, starmap, imap, repeat, takewhile, tee, chain, ifilter
-from collections import Iterable, deque
+from itertools import izip, starmap, imap, repeat, takewhile
 
 import numpy
 from numpy import square, sqrt, multiply, add, zeros, dot
-from numpy import ctypeslib
-
-from multiprocessing import sharedctypes, Process, cpu_count
 
 
 import activation
 import normalization
-
-
-number_of_cores = cpu_count()
 
 
 class Layer(object):
@@ -122,6 +115,7 @@ class NeuralNetwork(object):
             max_number_of_iterations=100000,
             normalization_class='MinMax'
     ):
+        self.errors = []
         self.layers = layers
         self.allowed_error_threshold = allowed_error_threshold
         self.max_number_of_iterations = max_number_of_iterations
@@ -129,7 +123,7 @@ class NeuralNetwork(object):
         self.layers_reversed = tuple(reversed(layers))
 
         sum_of_posterior_v = 1
-        for layer in self.layers_reversed[:-1]:  # calculate learning rate for each layer ...
+        for layer in self.layers_reversed[:-1]:  # calculate learning rate for each layer, skip input layer ...
             v = (1.0 / layer.number_of_inputs_per_neuron) * sum_of_posterior_v
             layer.learning_rate /= (layer.number_of_inputs_per_neuron * sqrt(v))
             sum_of_posterior_v = numpy.sum(v)
@@ -168,24 +162,30 @@ class NeuralNetwork(object):
             )
         )
 
-    def train(self, training_set, max_alloted_time=None):
-        """ @Training_set: list of 2-tuple containing flatten input and corresponding output data set. """
+    def process_training_set(self, training_set):
         input_set, output_set = imap(numpy.asarray, izip(*training_set))  # convert training set to numpy array ...
-
         self.input_normalization, self.output_normalization = imap(self.normalization_class, (input_set, output_set))
 
         normalized_input_set = self.input_normalization.normalize(input_set)
         normalized_output_set = self.output_normalization.normalize(output_set)
+        return normalized_input_set, normalized_output_set
 
-        self.errors = tuple(
-            takewhile(
-                lambda sum_error, allowed_threshold=self.allowed_error_threshold: sum_error > allowed_threshold,
-                starmap(
-                    self._apply_samples,
-                    repeat((normalized_input_set, normalized_output_set), self.max_number_of_iterations)
-                )
+    def train(self, training_set):
+        """ @Training_set: list of 2-tuple containing flatten input and corresponding output data set. """
+        self.errors = tuple(self.itrain(training_set))
+
+    def itrain(self, training_set):
+        """ similar to train except it iterates over each epoch returning the current error ..."""
+        normalized_input_set, normalized_output_set = self.process_training_set(training_set)
+        for error in takewhile(
+            lambda sum_error, allowed_threshold=self.allowed_error_threshold: sum_error > allowed_threshold,
+            starmap(
+                self._apply_samples,
+                repeat((normalized_input_set, normalized_output_set), self.max_number_of_iterations)
             )
-        )
+        ):
+            yield error
+            self.errors.append(error)
 
     def feed_normalized_input(self, normalized_input):
         return self._apply_input(normalized_input)

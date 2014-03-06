@@ -10,51 +10,55 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Calculate the collisions over the left and right diaganols of a 2-D chess board filled with 0s and 1s
+// Calculate the collisions over the left and right diagonals of a 2-D chess board filled with 0s and 1s
 unsigned int collisions(unsigned char *board, unsigned int board_size)
 {
-    unsigned int diaganol_mag = board_size;
-    // keep track of diagnol sums by mag each board has board_size sizes ...
-    unsigned int (*diaganol_sums)[4] = calloc(board_size, sizeof(unsigned int[4]));
-    unsigned int *current_diaganols = diaganol_sums[board_size - 1];
+    unsigned int
+        diagonal_mag = board_size,
+        (*diagonal_sums)[4] = calloc(board_size, sizeof(unsigned int[4])),  // keep track of diagnol sums by mag each board has board_size sizes ...
+        *current_diagonals = diagonal_sums[board_size - 1];
 
-    unsigned char *current_row = board + (board_size * board_size); // last row ...
-    while (diaganol_mag--) // center diagnols ...
+    unsigned char *top_off_center_rows = (board + (board_size * board_size)), *bottom_off_center_rows;
+    while (diagonal_mag--) // do center diagnols first since theres only two of them ...
     {
-        current_row -= board_size;
-        current_diaganols[1] += current_row[(board_size - diaganol_mag + 1)];
-        current_diaganols[0] += current_row[diaganol_mag];
+        top_off_center_rows -= board_size;
+        current_diagonals[1] += top_off_center_rows[board_size - diagonal_mag - 1]; // left ...
+        current_diagonals[0] += top_off_center_rows[diagonal_mag]; // right
     }
 
-    unsigned int diaganols = board_size;
-    while (diaganols--)
+    unsigned int diagonals = board_size;
+    while (diagonals--)  // go over all the remaining off center diagonals, theres 4 for each magnitude ...
     {
-        diaganol_mag = diaganols;
-        current_diaganols = diaganol_sums[diaganol_mag - 1];
-        current_row = board + (board_size * board_size); // last row ...
-        while (diaganol_mag--) // off-center diagnols ...
-        {
-            current_row          -= board_size;
-            current_diaganols[0] += current_row[diaganol_mag];
-            current_diaganols[1] += current_row[board_size - diaganol_mag - 1];
-            current_diaganols[2] += board[(diaganol_mag * board_size) + (diaganols - diaganol_mag - 1)];
-            current_diaganols[3] += board[(diaganol_mag * board_size) + board_size - (diaganols - diaganol_mag)];
+        diagonal_mag = diagonals;
+        current_diagonals = diagonal_sums[diagonal_mag - 1];
 
+        bottom_off_center_rows   = board + (board_size * board_size);   // bottom rows
+        top_off_center_rows      = board + (diagonal_mag * board_size); // top rows
+
+        while (diagonal_mag--) // do off-center diagnols, off-center above and below in each direction ...
+        {
+            bottom_off_center_rows  -= board_size; // bottom off-center
+            current_diagonals[0]    += bottom_off_center_rows[diagonal_mag]; // right
+            current_diagonals[1]    += bottom_off_center_rows[board_size - diagonal_mag - 1]; // left
+
+            top_off_center_rows     -= board_size; // top off-center ...
+            current_diagonals[2]    += top_off_center_rows[(diagonals - diagonal_mag - 1)]; // left
+            current_diagonals[3]    += top_off_center_rows[(board_size - (diagonals - diagonal_mag))]; // right
         }
     }
 
-    #define sum_collisions diaganol_mag
-    sum_collisions = 0;     // skip diagnols of size 1, since they can't have collisions ...
-    while (--board_size)  // go over all diagnols, for each approproate size calculate collision to their sum - 1
-    {
-        current_diaganols = diaganol_sums[board_size];
-        sum_collisions += (current_diaganols[0] - (current_diaganols[0] != 0)) // subtract 1 if non-zero ...
-                        + (current_diaganols[1] - (current_diaganols[1] != 0))
-                        + (current_diaganols[2] - (current_diaganols[2] != 0))
-                        + (current_diaganols[3] - (current_diaganols[3] != 0));
+    #define sum_collisions diagonal_mag
+    sum_collisions = 0;
+    while (--board_size)  // skip diagonals of size 1, since they can't have collisions ...
+    {   // go over all diagonals, for each approproate size calculate collision to their sum - 1
+        current_diagonals = diagonal_sums[board_size];
+        sum_collisions  += (current_diagonals[0] - (current_diagonals[0] != 0)) // subtract 1 if non-zero ...
+                        +  (current_diagonals[1] - (current_diagonals[1] != 0))
+                        +  (current_diagonals[2] - (current_diagonals[2] != 0))
+                        +  (current_diagonals[3] - (current_diagonals[3] != 0));
     }
 
-    free(diaganol_sums);
+    free(diagonal_sums);
     return sum_collisions;
     #undef sum_collisions
 }

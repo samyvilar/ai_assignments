@@ -1,66 +1,70 @@
-__author__ = 'samy.vilar'
-__date__ = '12/27/12'
-__version__ = '0.0.1'
+#! /usr/bin/env python
+__author__ = 'samyvilar'
 
-from datetime import datetime
+import argparse
+from datetime import datetime, timedelta
 from itertools import compress, islice, imap, chain, izip
 
 import numpy
 
-from matplotlib import pyplot as plt
-from matplotlib import dates as mdates
-from matplotlib import finance
-from matplotlib import mlab
-
+from matplotlib import pyplot as plt, finance, mlab
 from network import InputLayer, HiddenLayer, OutputLayer, NeuralNetwork
+from animate import AnimatePlots
 
 
-def get_trained_stock_neural_network(stock_prices_training_set, number_of_hidden_neurons=30):
-    number_of_inputs = len(stock_prices_training_set[0][0])
-    number_of_outputs = len(stock_prices_training_set[0][1])
+def train(nn, data):
+    nn.train(data)
+    return nn
+
+
+def get_animated_training(background=False):
+    def animate_training(nn, training_set):
+        animated_plot = AnimatePlots(background)
+        norm_input_set, norm_output_set = nn.process_training_set(training_set)
+        input_set = nn.input_normalization.de_normalize(norm_input_set)
+        animated_plot.update(norm_input_set, nn.output_normalization.de_normalize(norm_output_set), 0, -1)  # original data
+
+        for epoch, rel_error in enumerate(nn.itrain(training_set), 1):
+            animated_plot.update(input_set, map(nn.feed, input_set), epoch, rel_error)
+        animated_plot.stop()
+    return animate_training
+
+
+def get_trained_stock_neural_network(
+        stock_prices_training_set,
+        hidden_neuron_count=30,
+        training_func=None,
+        threshold=.001,
+        max_iterations=1000,
+        activation='HyperbolicTangent',
+        normalization='Statistical'
+):
+    number_of_inputs, number_of_outputs = len(stock_prices_training_set[0][0]), len(stock_prices_training_set[0][1])
 
     layers = (
-        InputLayer(
-            number_of_inputs,                   # Number of Neurons
-            1,                                  # Number of Inputs per Neuron
-            'Identity'                          # Activation function.
-        ),
+        InputLayer(number_of_inputs, number_of_inputs_per_neuron=1, activation_function='Identity'),
+        HiddenLayer(hidden_neuron_count, number_of_inputs_per_neuron=number_of_inputs, activation_function=activation),
 
-        HiddenLayer(
-            number_of_hidden_neurons,
-            number_of_inputs,
-            'HyperbolicTangent'
-        ),
-
-        OutputLayer(
-            number_of_outputs,
-            number_of_hidden_neurons,
-            'Identity'                          # The activation function is giving the dot product, so do nothing ...
+        OutputLayer(                            # The activation function is giving the dot product, so do nothing ...
+            number_of_outputs, number_of_inputs_per_neuron=hidden_neuron_count, activation_function='Identity'
         )
     )
 
-    neural_network = NeuralNetwork(
-        layers=layers,
-        allowed_error_threshold=.001,
-        max_number_of_iterations=10000,
-        normalization_class='Statistical'
-    )
-    neural_network.train(stock_prices_training_set)
-    return neural_network
-
-
-def test(neural_network, network_input, expected_output):
-    print "actual closing_price: {actual} predicted: {predicted}".format(
-        actual=expected_output,
-        predicted=neural_network.feed(network_input)
+    return (training_func or train)(
+        NeuralNetwork(
+            layers,
+            allowed_error_threshold=threshold,
+            max_number_of_iterations=max_iterations,
+            normalization_class='Statistical'
+        ),
+        stock_prices_training_set
     )
 
 
-def train_as_function_interpolation(stock_data):
-    neural_network = get_trained_stock_neural_network(
-        [((float(index),), (stock_price,)) for index, stock_price in enumerate(stock_data)]
-    )
-    test(neural_network, len(stock_data) - 1, stock_data[-1])
+def predict_last(neural_network, network_input, expected_output):
+    print("last entry, actual closing_price: {actual} predicted: {predicted}".format(
+        actual=expected_output, predicted=neural_network.feed(network_input)
+    ))
     return neural_network
 
 
@@ -71,10 +75,28 @@ def sliding_window(values, window_size):
     )
 
 
-def train_as_time_series(stock_prices, window_size):
-    neural_network = get_trained_stock_neural_network(sliding_window(stock_prices, window_size))
-    test(neural_network, stock_prices[-(window_size + 1):-1], stock_prices[-1])
-    return neural_network
+def train_as_time_series(stock_prices, window_size, training_func=None, **kwargs):
+    return predict_last(
+        get_trained_stock_neural_network(
+            sliding_window(stock_prices, window_size),
+            training_func=training_func,
+            **kwargs
+        ),
+        stock_prices[-(window_size + 1):-1],
+        stock_prices[-1]
+    )
+
+
+def train_as_function_interpolation(stock_data, training_func=None, **kwargs):
+    return predict_last(
+        get_trained_stock_neural_network(
+            tuple(((float(index),), (stock_price,)) for index, stock_price in enumerate(stock_data)),
+            training_func=training_func,
+            **kwargs
+        ),
+        len(stock_data) - 1,
+        stock_data[-1]
+    )
 
 
 def plot(actual_data, predicted_data, end_of_training_point, x_axis, title='', errors=None):
@@ -111,39 +133,97 @@ def plot(actual_data, predicted_data, end_of_training_point, x_axis, title='', e
     if errors:
         plt.figure()
         _ = plt.plot(xrange(len(errors)), errors, 'r--')
+        plt.xlabel('Epoch')
+        plt.ylabel('Relative Error')
+        plt.title('Neural Network Relative Error History')
 
     plt.show()
 
 
-def main():
-    stock_symbol = 'nflx'
-    number_of_training_days = 20
-    window_size = 4
-    percentage_of_trainable_days = .99
+def main(
+    stock='aapl',
+    start_date=None,
+    end_date=None,
+    training=None,
+    time_series=None,
+    animate=None,
+    **kwargs
+):
+    animate = (animate in {'foreground', 'background'} and get_animated_training(animate == 'background')) or train
+    training = training or 20
+    end_date = end_date or datetime.today()
+    start_date = start_date or end_date - timedelta(days=int((training > 1 and training) or 30))
 
-    stock_data = mlab.csv2rec(finance.fetch_historical_yahoo(stock_symbol, datetime(2013, 1, 1), datetime.today()))
-    stock_prices = stock_data.adj_close[:number_of_training_days][::-1]
-    dates = stock_data.date[:number_of_training_days][::-1]
+    stock_data = mlab.csv2rec(finance.fetch_historical_yahoo(stock, start_date, end_date))
+    stock_prices = tuple(reversed(stock_data.adj_close))
+    dates = tuple(reversed(stock_data.date))
+    training_set = stock_prices[:int(training > 1 and training or training * len(stock_data.adj_close))]
 
-    training_set = stock_prices[:int(number_of_training_days * percentage_of_trainable_days)]
+    def _time_series(window_size):
+        neural_network = train_as_time_series(training_set, window_size, **kwargs)
+        network_samples = sliding_window(stock_prices, window_size)
+        predicted_prices = list(network_samples[0][0])
+        predicted_prices.extend(chain.from_iterable(neural_network.feed(inputs) for inputs, _ in network_samples))
+        plot(
+            stock_prices,
+            predicted_prices,
+            dates[len(training_set) - 1],
+            x_axis=dates,
+            title='Trained as Time Series',
+            errors=neural_network.errors
+        )
 
-    # neural_network = train_as_time_series(training_set, window_size)
-    # network_samples = sliding_window(stock_prices, window_size)
-    # predicted_prices = list(network_samples[0][0])
-    # predicted_prices.extend(chain.from_iterable(neural_network.feed(inputs) for inputs, _ in network_samples))
+    def interpolation():
+        neural_network = train_as_function_interpolation(training_set, animate, **kwargs)
+        predicted_prices = list(chain.from_iterable(imap(neural_network.feed, xrange(len(stock_prices)))))
 
-    neural_network = train_as_function_interpolation(training_set)
-    predicted_prices = [neural_network.feed(index)[0] for index in xrange(len(stock_prices))]
+        plot(
+            stock_prices,
+            predicted_prices,
+            dates[len(training_set) - 1],
+            x_axis=dates,
+            title='Trained as Function Interpolation',
+            errors=neural_network.errors
+        )
 
-    plot(
-        stock_prices,
-        predicted_prices,
-        dates[len(training_set) - 1],
-        x_axis=dates,
-        title='Trained as Function Interpolation',
-        errors=neural_network.errors
+    if time_series:
+        _time_series(time_series)
+    else:
+        interpolation()
+
+
+def parse_date(string):
+    return datetime.strptime(string, '%Y-%m-%d').date()
+
+
+def grab_command_line_arguments():
+    parser = argparse.ArgumentParser(description='Neural Network Stock price predictor.')
+    parser.add_argument('--stock', type=str, default='aapl', nargs='?', help='Stock symbol such as appl')
+    parser.add_argument('--start_date', type=parse_date, nargs='?', default=None,
+                        help='start date of the data set such as 2014-01-01')
+    parser.add_argument('--end_date', type=parse_date, default=None, nargs='?',
+                        help='end date of the data set such as %s' % str(datetime.today().date()))
+    parser.add_argument('--training', default=None, type=float, nargs='?',
+                        help='Training set quantity, magnitude if value greater than 1 or percentage if less than 1')
+    parser.add_argument(
+        '--time_series', type=int, default=None, nargs='?',
+        help='treat the training set as a time series with a giving window size otherwise just interpolate'
     )
+    parser.add_argument(
+        '--animate', default=None, help='Animate current progress either in the foreground of the background'
+    )
+    parser.add_argument('--max_iterations', type=int, default=1000, nargs='?', help='Maximum number of iterations.')
+    parser.add_argument('--threshold', type=float, default=.001, nargs='?',
+                        help='Minimum, relative error before halting.')
+    parser.add_argument('--hidden_neuron_count', type=int, default=10, nargs='?',
+                        help='Number of Hidden Neurons to be used')
+    parser.add_argument('--activation', default='HyperbolicTangent', nargs='?',
+                        help='Hidden layers Activation function default: HyperbolicTangent')
+    parser.add_argument('--normalization', default='Statistical', nargs='?',
+                        help='Normalization Class default: Statistical')
+
+    main(**vars(parser.parse_args()))
 
 
 if __name__ == '__main__':
-    main()
+    grab_command_line_arguments()

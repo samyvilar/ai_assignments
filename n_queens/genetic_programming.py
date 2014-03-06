@@ -39,7 +39,12 @@ def get_program_generator(max_depth, number_of_queens):
             new_board[:, columns[::-1]] = board[:, columns]  # swap columns ...
             return new_board
         # program (chromosome ... ) is nothing more then sequence of random swaps ...
-        return list(izip(repeat(swap, max_number_of_swaps), starmap(random.sample, repeat((row_indices, 2)))))
+        return list(
+            izip(
+                repeat(swap, numpy.random.randint(1, max_number_of_swaps)),
+                starmap(random.sample, repeat((row_indices, 2)))
+            )
+        )
     return get_new_program
 
 
