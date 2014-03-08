@@ -23,111 +23,124 @@ may be easier to run the program concurrently.
 """
 __author__ = 'samy.vilar'
 
-from itertools import izip, repeat, imap, starmap
+from itertools import izip, repeat, imap, starmap, cycle
 
 import numpy
-import random
+from numpy.random import randint, random
 
-from genetic_algorithm import genetic_algorithm, selection, get_sort_population
-from utils import calc_collision, new_random_board, sample_population
-
-
-def get_program_generator(max_depth, number_of_queens):
-    def get_new_program(max_number_of_swaps=max_depth, row_indices=numpy.arange(number_of_queens)):
-        def swap(columns, board):
-            new_board = board.copy()
-            new_board[:, columns[::-1]] = board[:, columns]  # swap columns ...
-            return new_board
-        # program (chromosome ... ) is nothing more then sequence of random swaps ...
-        return list(
-            izip(
-                repeat(swap, numpy.random.randint(1, max_number_of_swaps)),
-                starmap(random.sample, repeat((row_indices, 2)))
-            )
-        )
-    return get_new_program
+from genetic_algorithm import genetic_algorithm, get_selection, get_sort_population
+from utils import calc_collision, new_random_board, sample, identity, swap, item
 
 
-def cross_over(population):
-    parents = sample_population(population, 2)
-    return parents[0][:random.randint(0, len(parents[0]) - 1)] + parents[1][random.randint(0, len(parents[1]) - 1):]
+def program_generator(max_depth, number_of_queens, initial_board):
+    def new_program(max_number_of_swaps=max_depth, row_indices=numpy.arange(number_of_queens)):
+        class Program(object):  # program (chromosome ... ) is nothing more then sequence of random swaps ...
+            def __init__(self, swaps):
+                self.initial_board = initial_board
+                self.swaps = tuple(swaps)
 
+            def __len__(self):
+                return len(self.swaps)
 
-def hoist_mutation(population):
-    program = sample_population(population, 1)
-    return program[random.randint(0, len(program) - 1):]
+            def __call__(self):
+                if not hasattr(self, 'collisions'):
+                    self.collisions = calc_collision(reduce(swap, self.swaps, self.initial_board))
+                return self.initial_board.size - self.collisions
 
+            def __getitem__(self, item):  # if slicing return a new program otherwise return swap value ...
+                return ((isinstance(item, slice) and Program) or identity)(self.swaps[item])
 
-def shrink_mutation(population):
-    program = sample_population(population, 1)
-    new_program = list(program)
-    del new_program[random.randint(1, len(program)):]
+            def __add__(self, other):
+                return Program(self.swaps + other.swaps)
+
+        return Program(starmap(sample, repeat((row_indices, 2), randint(1, max_number_of_swaps + 1))))
     return new_program
 
 
-def get_genetic_operators(number_of_queens, get_new_program):
+def cross_over(population):  # select 2 random programs create a new program by randomly joining two sequences ..
+    parents = sample(population, 2)
+    return reduce(
+        type(parents[0]).__add__,
+        imap(
+            item,
+            parents,
+            starmap(
+                slice,
+                izip(
+                    imap(randint, imap(len, parents)),
+                    imap(apply, cycle((lambda _: None, len)), imap(tuple, imap(repeat, parents, repeat(1))))
+                )
+            )
+        )
+    )
+
+
+def hoist_mutation(population):  # randomly select a program, create a new program using a randomly selected subtree
+    program = sample(population, 1)[0]
+    return program[randint(len(program)):]
+
+
+def get_shrink_mutation(number_of_queens, get_new_program):
+    def shrink_mutation(population):  # replace subtree with a new terminal ...
+        program = sample(population, 1)[0]
+        return program[randint(len(program)):] + get_new_program(1)
+    return shrink_mutation
+
+
+def get_subtree_mutation(get_new_program):  # replace entire subtree with new program ...
     def subtree_mutation(population):
-        return cross_over((sample_population(population, 1), get_new_program()))
+        program = sample(population, 1)[0]
+        return program[:randint(len(program))] + get_new_program()
+    return subtree_mutation
 
+
+def get_constant_mutation(number_of_queens):
     def constant_mutation(population):
-        program = sample_population(population, 1)
-        rand_index = random.randint(0, len(program) - 1)
-        new_program = list(program)
-        new_program[rand_index][1][:] = \
-            [(program[rand_index][1][0] + random.randint(0, number_of_queens)) % number_of_queens,
-             (program[rand_index][1][1] + random.randint(0, number_of_queens)) % number_of_queens]
-        return new_program
+        program = sample(population, 1)[0]  # randomly select a program
+        node = program[randint(len(program))]  # random select a node (swap command) get param
+        random_index = randint(len(node))   # select indices at random
+        node[randint(len(node))] = randint(number_of_queens)  # update the swap command ..
+        return program
+    return constant_mutation
 
-    rules = subtree_mutation, constant_mutation, shrink_mutation, hoist_mutation
+
+def get_genetic_operators(number_of_queens, get_new_program):
+    rules = get_subtree_mutation(get_new_program), \
+        get_constant_mutation(number_of_queens), \
+        get_shrink_mutation(number_of_queens, get_new_program), \
+        hoist_mutation
 
     def genetic_operators(population, sample_size):
-        # Each solution is unique any composite solution(s) would just add collisions to row/column ...
-        prob_of_reproduction = .025
-        prob_of_mutation = .15
+        prob_of_reproduction, prob_of_mutation = .025, .15
 
-        def random_value_to_func(rand_value):
-            if rand_value <= prob_of_reproduction:
-                return lambda population: sample_population(population, 1)
+        def get_oper(rand_value):
+            if rand_value <= prob_of_reproduction:  # entry doesn't reproduce ...
+                return lambda population: sample(population, 1)[0]
             elif rand_value <= prob_of_mutation:
-                return rules[random.randint(0, len(rules) - 1)]
+                return rules[randint(len(rules))]
             else:
-                return cross_over
-        return map(
-            apply,
-            imap(random_value_to_func, imap(apply, repeat(numpy.random.random, sample_size))),
-            repeat((population,))
-        )
+                return cross_over  # probability of crossover .75 ...
+        return list(imap(apply, imap(get_oper, imap(apply, repeat(random, sample_size))), repeat((population,))))
+    return genetic_operators
 
 
-def get_fitness_function(initial_board):
-    def fitness_function(program, new_board=initial_board):
-        collision = None
-        for index, prog in enumerate(program):
-            new_board = prog[0](prog[1], new_board)
-            collision = calc_collision(new_board)
-            if not collision:
-                del program[index + 1:]
-                break
-        return new_board.size - collision
-    return fitness_function
-
-
-def solve_n_queens_problem(number_of_queens, population_size=10**3, max_depth=10**2, max_number_iterations=10**6):
+def solve_n_queens_problem(number_of_queens, population_size=10**3, max_depth=10**2, max_iterations=10**6):
     board = new_random_board(number_of_queens)
-    fitness_function = get_fitness_function(board)
+    fitness_function = apply
     sort_population = get_sort_population(fitness_function)
+    create_new_program = program_generator(max_depth, number_of_queens, board)
 
     def error_func(program):
         return board.size - fitness_function(program)
 
     best_program = genetic_algorithm(
-        sort_population(map(apply, repeat(get_program_generator(max_depth, number_of_queens), population_size))),
-        selection,
-        get_genetic_operators(number_of_queens, get_program_generator(max_depth, number_of_queens)),
+        sort_population(map(apply, repeat(create_new_program, population_size))),
+        get_selection(fitness_function),
+        get_genetic_operators(number_of_queens, create_new_program),
         sort_population,
         error_func,
-        max_number_of_iterations=max_number_iterations,
-        sample_size=.35,
+        max_iterations=max_iterations,
+        sample_percentage=.35,
     )
 
-    return reduce(lambda board, program: program[0](program[1], board), best_program, board)
+    return reduce(swap, best_program.swaps, board)

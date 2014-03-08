@@ -36,9 +36,10 @@ from itertools import imap, repeat, izip, chain
 from bisect import bisect_left
 
 import numpy
-import random
+from numpy import cumsum, sum, divide
+from numpy.random import random
 
-from utils import calc_collision, irandom_board, sample_population, new_initialized_board
+from utils import calc_collision, irandom_board, sample, new_initialized_board, items, swap, board_element_type
 
 
 def genetic_algorithm(
@@ -47,22 +48,23 @@ def genetic_algorithm(
     genetic_operators,
     sort_population,
     error_func,
-    sample_size=.35,
-    max_number_of_iterations=10**6,
+    sample_percentage=.35,
+    max_iterations=10**6,
 ):
     population_size = len(population)
-    max_iteration = max_number_of_iterations
-    sample_mag = int(sample_size * population_size)
+    max_iteration = max_iterations
+    sample_size = int(sample_percentage * population_size)
     smallest_error = error_func(population[0])
-    while max_number_of_iterations and smallest_error:
-        population = sort_population(genetic_operators(selection(population, sample_mag), population_size))
-        max_number_of_iterations -= 1
+
+    while max_iterations and smallest_error:
+        population = sort_population(genetic_operators(selection(population, sample_size), population_size))
+        max_iterations -= 1
         if error_func(population[0]) < smallest_error:
             smallest_error = error_func(population[0])
             print("improved solution found @iteration: {iteration} new error {new_error}".format(
-                iteration=max_iteration - max_number_of_iterations, new_error=smallest_error
+                iteration=max_iteration - max_iterations, new_error=smallest_error
             ))
-    print('total iterations: {0}'.format(max_iteration - max_number_of_iterations))
+    print('total iterations: {0}'.format(max_iteration - max_iterations))
     return population[0]
 
 
@@ -70,35 +72,27 @@ def fitness_function(solution):
     return solution.size - calc_collision(solution)
 
 
-# noinspection PyUnresolvedReferences
-def selection(population, sample_size):
-    # fitness proportionate selection or roulette-wheel selection,
-    # assumes that the population has being sorted from best to worse, high fitness to low fitness ...
-    population_fitness = numpy.fromiter(
-        imap(fitness_function, population), dtype=getattr(population, 'dtype', 'float'), count=len(population)
-    )
-    # normalized all the fitness values (collision) and take their accumulated sum
-    normalized_accumulated_fitness_values = numpy.add.accumulate(population_fitness / float(population_fitness.sum()))
-    return population[
-        numpy.fromiter(
-            imap(
-                bisect_left,
-                repeat(normalized_accumulated_fitness_values, sample_size),
-                imap(apply, repeat(numpy.random.random)),  # randomly select a member (spin the wheel)
-            ),
-            dtype='int',
-            count=sample_size
-        )
-    ]
+def get_selection(fitness_function):
+    def selection(population, sample_size, fitness_function=fitness_function):
+        # fitness proportionate selection/roulette-wheel selection,
+        # assumes that the population has being sorted from best to worse, high fitness to low fitness ...
+        fitnesses = numpy.fromiter(imap(fitness_function, population), dtype='float', count=len(population))
+        # normalized all the fitness values (collision) and take their accumulated sum to create a probability line
+        probability_l = cumsum(divide(fitnesses, float(sum(fitnesses))))  # probability line ...
+        return items(population, imap(bisect_left, repeat(probability_l, sample_size), imap(apply, repeat(random))))
+    return selection
+
+
+selection = get_selection(fitness_function)
 
 
 def get_sort_population(fitness_function):  # sort population based on fitness function,
     def sort_population(population, fitness_function=fitness_function):
-        population_fitness = numpy.fromiter(imap(fitness_function, population), dtype='int', count=len(population))
+        population_fitness = numpy.fromiter(imap(fitness_function, population), dtype='float', count=len(population))
         sum_of_errors = float(population_fitness.sum())
         if isinstance(population, numpy.ndarray):
         # sort the population based on their relative fitness in desc order, from best to worse ...
-            return population[numpy.argsort(population_fitness / sum_of_errors)[::-1]]
+            return population[numpy.argsort(population_fitness / sum_of_errors)][::-1]
         population.sort(key=lambda population: -fitness_function(population) / sum_of_errors)  # negate to sort in desc
         return population
     return sort_population
@@ -107,52 +101,48 @@ def get_sort_population(fitness_function):  # sort population based on fitness f
 sort_population = get_sort_population(fitness_function)
 
 
-def solve_n_queens_problem(number_of_queens, population_size=10**3):
-    def swap_2_random_columns(population, all_rows=numpy.arange(number_of_queens)):
-        solution = sample_population(population, 1)
-        rand_cols = random.sample(all_rows, 2)  # find two random columns.
-        new_solution = solution.copy()
-        new_solution[:, rand_cols[::-1]] = solution[:, rand_cols]  # swap columns.
-        return new_solution
+def solve_n_queens_problem(number_of_queens, population_size=10**3, max_iterations=10**4):
+    indices = numpy.arange(number_of_queens)
 
-    def merge_2_random_solutions(population, possible_columns=numpy.arange(number_of_queens)):
-        parents = sample_population(population, 2)  # select parents at random ...
-        # randomly select a chromosome from each parent ...
+    def swap_2_random_columns(population, all_rows=indices):
+        return swap(sample(population, 1)[0], sample(all_rows, 2))
+
+    def merge_2_random_solutions(population, possible_columns=indices):
+        parents = sample(population, 2)  # select parents at random ...
         columns = numpy.where(parents == 1)[-1].reshape(2, number_of_queens)
-        random_indices = numpy.fromiter(
-            imap(columns.__getitem__, izip(numpy.random.random(number_of_queens) < 0.5, possible_columns)),
-            dtype='int',
-            count=number_of_queens
+        random_indices = numpy.fromiter(  # randomly select a chromosomes from each parent at random ...
+            imap(columns.__getitem__, izip(random(number_of_queens) < 0.5, possible_columns)), 'int', number_of_queens
         )
-        remaining_elems = numpy.setdiff1d(possible_columns, random_indices)
-        if len(remaining_elems):  # we have duplicates, replace duplicate chromosomes by randomly selecting missing
-            numpy.random.shuffle(remaining_elems)
-            random_indices[numpy.setdiff1d(possible_columns, numpy.unique(random_indices, True)[1])] = remaining_elems
+        missing_elems = numpy.setdiff1d(possible_columns, random_indices)  # check if we have any missing ...
+        if len(missing_elems):  # missing chromosomes, solutions has row/column collisions ...
+            numpy.random.shuffle(missing_elems)  # shuffle the missing rows since setdiff1d sorts them ...
+            random_indices[numpy.setdiff1d(possible_columns, numpy.unique(random_indices, True)[1])] = missing_elems
+        return new_initialized_board(random_indices)  # create a new board from randomly selected entries from parents.
 
-        return new_initialized_board(random_indices)
-
-    operators = {True: swap_2_random_columns, False: merge_2_random_solutions}
+    operators = merge_2_random_solutions, swap_2_random_columns
 
     def genetic_operators(population, sample_size, prob_of_mutation=.3):
-        # Each solution is unique any composite solution(s) would just add collisions to row/column ...
-        return numpy.asarray(
-            tuple(imap(
-                apply,  # apply genetic operator on population ...
-                imap(operators.__getitem__, numpy.random.random(sample_size) < prob_of_mutation),  # get genetic oper
-                repeat((population,))
+        new_population_shape = sample_size, number_of_queens, number_of_queens
+        return numpy.fromiter(
+            chain.from_iterable(chain.from_iterable(
+                imap(apply, imap(operators.__getitem__, random(sample_size) < prob_of_mutation), repeat((population,)))
             )),
-            dtype=population.dtype
-        )
+            dtype=population.dtype,
+            count=numpy.product(new_population_shape)
+        ).reshape(new_population_shape)
+
     population_shape = population_size, number_of_queens, number_of_queens
     return genetic_algorithm(
         sort_population(
             numpy.fromiter(
                 chain.from_iterable(imap(irandom_board, repeat(number_of_queens, population_size))),
-                dtype='ubyte', count=numpy.product(population_shape)
+                dtype=board_element_type,
+                count=numpy.product(population_shape)
             ).reshape(population_shape)
         ),
         selection,
         genetic_operators,
         sort_population,
-        calc_collision
+        calc_collision,
+        max_iterations=max_iterations
     )

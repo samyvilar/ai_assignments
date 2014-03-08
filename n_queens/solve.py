@@ -29,10 +29,8 @@ matplotlib
 """
 __author__ = 'samyvilar'
 
-from itertools import takewhile, imap, repeat, ifilter
-
-import sys
 import time
+import argparse
 
 import simulated_annealing
 import genetic_algorithm
@@ -40,29 +38,38 @@ import genetic_programming
 
 from utils import calc_collision, py_diagonal_collisions
 
+packages = simulated_annealing, genetic_algorithm, genetic_programming
+
+
+def parse_arguments():
+    parse = argparse.ArgumentParser()
+    parse.add_argument('--number_of_queens', default=10, nargs='?', type=int)
+    parse.add_argument('--algorithms', default=packages, nargs='+', type=lambda name: globals()[name])
+    parse.add_argument('--max_iterations', default=10000, nargs='?', type=int)
+    parse.add_argument('--population_size', default=1000, nargs='?', type=int,
+                       help='Size of the population to be used to contain genes.')
+
+    args = parse.parse_args()
+    return args.algorithms, args.number_of_queens, args.max_iterations, args.population_size
+
 
 if __name__ == '__main__':
-    packages = simulated_annealing, genetic_algorithm, genetic_programming
-    package_names = set(imap(getattr, packages, repeat('__name__')))
-    number_of_queens = 10
-
-    if len(sys.argv) > 1:
-        if sys.argv[1].isdigit():
-            number_of_queens = (len(sys.argv) > 1 and int(sys.argv[1])) or number_of_queens
-        else:
-            selected_packages = tuple(takewhile(package_names.__contains__, sys.argv[1:]))
-            packages = set(imap(globals().__getitem__, selected_packages)) or packages
-            number_of_queens = int(next(ifilter(str.isdigit, sys.argv[len(selected_packages):]), number_of_queens))
+    packages, number_of_queens, max_iterations, population_size = parse_arguments()
 
     for package in packages:
         start = time.time()
-        solution = package.solve_n_queens_problem(number_of_queens)
+        solution = package.solve_n_queens_problem(
+            number_of_queens,
+            max_iterations=max_iterations,
+            population_size=population_size
+        )
         end = time.time()
-        assert not py_diagonal_collisions(solution)
+        if py_diagonal_collisions(solution):
+            print('failed to locate solution increase the number of iterations!')
         print('algorithm: {algorithm} error: {error} time: {elapse_time}s number_of_queens: {number_of_queens}'.format(
             algorithm=package.__name__,
             error=calc_collision(solution),
             elapse_time=end - start,
             number_of_queens=number_of_queens,
         ))
-        print("solution: \n{0}\n\n".format(solution))
+        print("closest solution: \n{0}\n\n".format(solution))

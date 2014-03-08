@@ -50,26 +50,25 @@ Repeat until solution found.
 """
 __author__ = 'samyvilar'
 
-from utils import calc_collision, new_random_board
-
 import numpy
-import random
+
+from utils import calc_collision, new_random_board, sample, swap
 
 
 def simulated_annealing(
     objective_function,
     initial_solution,
     permutation_function,
-    max_number_of_iterations=10**6,
+    max_iterations=10**6,
     temperature=1000,
     alpha=0.99
 ):
 
     best_solution = current_solution = initial_solution.copy()
     best_error = current_error = objective_function(current_solution)
-    max_iteration = max_number_of_iterations
+    max_iteration = max_iterations
 
-    while max_number_of_iterations and best_error:  # while we can still do better
+    while max_iterations and best_error:  # while we can still do better
         new_solution = permutation_function(current_solution)
         new_error = objective_function(new_solution)
 
@@ -78,31 +77,36 @@ def simulated_annealing(
             if new_error < best_error:
                 best_error, best_solution = new_error, new_solution
                 print("improved solution found @iteration: {iteration} new error {new_error}".format(
-                    iteration=max_iteration - max_number_of_iterations, new_error=new_error
+                    iteration=max_iteration - max_iterations, new_error=new_error
                 ))
         elif numpy.random.random() < numpy.e**(new_error - current_error)/temperature:
             current_solution, current_error = new_solution, new_error
 
         temperature *= alpha  # anneal ...
-        max_number_of_iterations -= 1
+        max_iterations -= 1
 
     if not best_error:
-        print("Found solution @iteration: {0}".format(max_iteration - max_number_of_iterations))
+        print("Found solution @iteration: {0}".format(max_iteration - max_iterations))
 
     return best_solution
 
 
-def solve_n_queens_problem(number_of_queens):
-    if number_of_queens == 1:  # solution is trivial for n = 1
+def solve_n_queens_problem(number_of_queens, max_iterations=10000, population_size=1000):
+    assert number_of_queens > 0
+    if not number_of_queens:
+        return []
+    elif number_of_queens == 1:  # solution is trivial for n = 1
         return [1]
-    if number_of_queens < 4:   # no solution exists for n = (2, 3)
+    elif number_of_queens < 4:   # no solution exists for n = (2, 3)
         return ()
 
     def permutation_function(current_solution, row_indices=numpy.arange(number_of_queens)):
-        rand_cols = random.sample(row_indices, 2)    # find two random columns.
-        new_solution = current_solution.copy()       # copy solution.
-        new_solution[:, rand_cols[::-1]] = current_solution[:, rand_cols]  # swap columns.
-        return new_solution
+        return swap(current_solution, sample(row_indices, 2))   # swap two random columns.
 
-    return simulated_annealing(calc_collision, new_random_board(number_of_queens), permutation_function)
+    return simulated_annealing(
+        calc_collision,
+        new_random_board(number_of_queens),
+        permutation_function, max_iterations=max_iterations,
+        temperature=population_size
+    )
 

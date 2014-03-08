@@ -1,8 +1,9 @@
 __author__ = 'samyvilar'
 
-from itertools import starmap, repeat, izip, chain, imap
-from collections import defaultdict
+from itertools import starmap, repeat, izip, chain, imap, product, count, ifilter
+from collections import defaultdict, OrderedDict, deque
 
+from inspect import isgenerator, isgeneratorfunction
 import random
 import numpy
 import hashlib
@@ -69,9 +70,7 @@ def calc_collision(solution, cache=defaultdict(defaultdict), cache_size_bytes=3 
 
     return diag_cols
 
-
-def new_initialized_board(columns):
-    return numpy.vstack(tuple(starmap(numpy.eye, izip(repeat(1), repeat(len(columns)), columns))))
+board_element_type = 'ubyte'
 
 
 def irow(length, set_column=0):
@@ -79,23 +78,50 @@ def irow(length, set_column=0):
 
 
 def irandom_board(number_of_queens):
-    return chain.from_iterable(
-        imap(irow, repeat(number_of_queens), random.sample(xrange(number_of_queens), number_of_queens))
-    )
+    return chain.from_iterable(imap(irow, repeat(number_of_queens), sample(xrange(number_of_queens), number_of_queens)))
 
 
 def new_random_board(number_of_queens):
-    board = numpy.identity(number_of_queens, dtype='ubyte')
+    board = numpy.identity(number_of_queens, dtype=board_element_type)
     numpy.random.shuffle(board)  # randomly shuffle the rows ...
     return board
+
+
+def new_initialized_board(columns, dtype=board_element_type):
+    return numpy.fromiter(
+        chain.from_iterable(imap(irow, repeat(len(columns)), columns)), dtype=board_element_type, count=len(columns)**2
+    ).reshape((len(columns), len(columns)))
 
 
 def get_set_columns(board):
     return numpy.where(board == 1)[1]
 
 
-def sample_population(population, sample_size):
+def sample(population, sample_size):
     random_indices = numpy.arange(len(population))
     numpy.random.shuffle(random_indices)
-    samples = population[random_indices[:sample_size]]
-    return samples[0] if sample_size == 1 else samples
+    return items(population, random_indices[:sample_size])
+
+
+def item(values, index):
+    return values[index]
+
+
+def items(values, indices, count=-1, container_type=list):
+    if isinstance(values, numpy.ndarray):
+        try:
+            return values[indices]
+        except IndexError as _:
+            return values[numpy.fromiter(indices, dtype='int', count=count)]
+    return container_type(imap(values.__getitem__, indices))
+
+
+def swap(board, columns):
+    new_board = board.copy()
+    new_board[:, columns[::-1]] = board[:, columns]  # swap columns ...
+    return new_board
+
+
+def identity(value):
+    return value
+
