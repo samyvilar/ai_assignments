@@ -5,6 +5,7 @@ from collections import defaultdict, OrderedDict, deque
 
 from inspect import isgenerator, isgeneratorfunction
 import random
+import math
 import numpy
 import hashlib
 
@@ -25,24 +26,84 @@ def diagonals(a):
     return numpy.lib.stride_tricks.as_strided(stacked, shape, strides)
 
 
-def py_diagonal_collisions(solution):
-    column_axis, row_axis = 0, 1
-    left_diagonal_queens = diagonals(solution).sum(axis=row_axis)
-    right_diagonal_queens = diagonals(numpy.fliplr(solution)).sum(axis=row_axis)
-    return left_diagonal_queens[numpy.where(left_diagonal_queens > 1)].sum() + \
-        right_diagonal_queens[numpy.where(right_diagonal_queens > 1)].sum()
+# def py_diagonal_collisions(solution):
+#     column_axis, row_axis = 0, 1
+#     left_diagonal_queens = diagonals(solution).sum(axis=row_axis)
+#     right_diagonal_queens = diagonals(numpy.fliplr(solution)).sum(axis=row_axis)
+#     return left_diagonal_queens[numpy.where(left_diagonal_queens > 1)].sum() + \
+#         right_diagonal_queens[numpy.where(right_diagonal_queens > 1)].sum()
+
+# a diagonal collision occurs between two queens if abs(delta(q_xcords)) == abs(delta(q_ycords))
+# assuming theres no queen between them ...
+# 1) a naive solution would simply iterate over all the n^2 possible locations adding up collisions ignoring if
+# there's any queens in between
+# 2) go over each diagnol and count the number of queens there,
+# the number of collision per diagonal is min(number of queens, 1) - 1
+def py_diagonal_collisions(col_cords):
+    return (
+        sum(
+            imap(
+                numpy.equal,
+                imap(numpy.abs, starmap(numpy.subtract, product(*repeat(numpy.arange(len(col_cords)), 2)))),
+                imap(numpy.abs, starmap(numpy.subtract, product(*repeat(col_cords, 2))))
+            )
+        ) - len(col_cords)  # subtract n queens since since a queen is always colliding with itself ...
+    )  # divide by 2 since the attacks are symmetrical ...
+
+
+    # return numpy.arange(len(col_cords)) == numpy.abs()
+    # colls_cnt = 0
+    # for queen_a in xrange(len(col_cords)):
+    #     for queen_b in xrange(len(col_cords)):
+    #         colls_cnt += abs(queen_a - queen_b) == abs(col_cords[queen_a] - col_cords[queen_b])
+    # return colls_cnt
+
+
+def ipermutation_inversion(perm):  # get the inverse permutation ...
+    perm = numpy.asarray(perm)    # for each index sum all the values preceding it in the permutation which are greater
+    return imap(numpy.sum, ((perm[:index] > perm[index]) for index in numpy.argsort(perm)))
+
+
+def permutation_from_inversion(inv_seq):  # get a permutation from its inverse sequence ...
+    inv_seq = numpy.asarray(inv_seq if hasattr(inv_seq, '__getitem__') else tuple(inv_seq), dtype=numpy.uint8)
+    pos = inv_seq.copy()
+    for i in reversed(xrange(len(inv_seq))):
+        pos[i + 1:] += pos[i + 1:] >= inv_seq[i]
+    return numpy.argsort(pos).astype(numpy.uint8)
 
 
 try:
-    libo = CDLL(os.path.join(os.path.dirname(__file__), 'libcollisions.so'))
+    libo = CDLL(os.path.join(os.path.dirname(__file__), 'libutils.so'))
     libo.collisions.argtypes = [c_void_p, c_uint]
     libo.collisions.restype = c_uint
 
+    libo.diag_collisions.argtypes = libo.collisions.argtypes
+    libo.collisions.restype = libo.collisions.restype
+
+    libo.permutation_inversion.argtypes = [c_void_p, c_void_p, c_uint]
+    libo.perm_from_inv_seq.argtypes = libo.permutation_inversion.argtypes
+
     def diagonal_collisions(solution):
         assert solution.dtype == numpy.uint8
-        return libo.collisions(c_void_p(solution.ctypes.data), c_uint(solution.shape[0]))
+        return libo.diag_collisions(c_void_p(solution.ctypes.data), c_uint(solution.shape[0]))
+        # return libo.collisions(c_void_p(solution.ctypes.data), c_uint(solution.shape[0]))
+
+    def permutation_inversion(perm):
+        assert perm.dtype == numpy.uint8
+        result = numpy.empty(len(perm), dtype=numpy.uint8)
+        libo.permutation_inversion(c_void_p(perm.ctypes.data), c_void_p(result.ctypes.data), c_uint(len(perm)))
+        return result
+
+    def permutation_from_inversion(inv_seq):
+        assert inv_seq.dtype == numpy.uint8
+        result = numpy.empty(len(inv_seq), dtype=numpy.uint8)
+        libo.perm_from_inv_seq(c_void_p(inv_seq.ctypes.data), c_void_p(result.ctypes.data), c_uint(len(inv_seq)))
+        return result
+
 except OSError as _:
+    print 'error'
     diagonal_collisions = py_diagonal_collisions
+    permutation_inversion = ipermutation_inversion
 
 
 # make sure to properly set the cache size, depending on the the system
@@ -54,10 +115,13 @@ def calc_collision(solution, cache=defaultdict(defaultdict), cache_size_bytes=3 
         # assert not numpy.sum(cache[hash]['solution'] - solution) # TODO: check for collisions.
         return cache[hash]['diagonal_collision']
 
-    diag_cols = diagonal_collisions(solution)
+    return diagonal_collisions(solution)
     #since we are shuffling the columns their will never be any collision around the rows or columns.
+
     #queens_in_rows = solution.sum(axis = row_axis)
-    #row_collision = queens_in_rows[numpy.where(queens_in_rows > 1)].sum()
+    #row_sums = solution.sum(1)
+    #column_sums = solution.sum(0)
+    #collisions = numpy.sum(row_sums[row_sums > 1] - 1) + numpy.sum(column_sums[column_sums > 1] - 1)
     #queens_in_columns = solution.sum(axis = column_axis)
     #column_collision = queens_in_columns[numpy.where(queens_in_columns > 1)].sum()
 
@@ -65,10 +129,10 @@ def calc_collision(solution, cache=defaultdict(defaultdict), cache_size_bytes=3 
 
 
     #if sys.getsizeof(cache) < cache_size_bytes:
-    cache[hash]['diagonal_collision'] = diag_cols
+    #cache[hash]['diagonal_collision'] = diag_cols
     #cache[hash]['solution'] = solution # TODO: check for collisions.
 
-    return diag_cols
+    #return diag_cols
 
 board_element_type = 'ubyte'
 
@@ -82,9 +146,12 @@ def irandom_board(number_of_queens):
 
 
 def new_random_board(number_of_queens):
-    board = numpy.identity(number_of_queens, dtype=board_element_type)
-    numpy.random.shuffle(board)  # randomly shuffle the rows ...
-    return board
+    col_indices = numpy.arange(number_of_queens, dtype=board_element_type)
+    numpy.random.shuffle(col_indices)
+    return col_indices
+    # board = numpy.identity(number_of_queens, dtype=board_element_type)
+    # numpy.random.shuffle(board)  # randomly shuffle the rows ...
+    # return board
 
 
 def new_initialized_board(columns, dtype=board_element_type):
@@ -93,8 +160,8 @@ def new_initialized_board(columns, dtype=board_element_type):
     ).reshape((len(columns), len(columns)))
 
 
-def get_set_columns(board):
-    return numpy.where(board == 1)[1]
+def columns(board):
+    return numpy.where(board == 1)[-1]
 
 
 def sample(population, sample_size):
@@ -116,12 +183,45 @@ def items(values, indices, count=-1, container_type=list):
     return container_type(imap(values.__getitem__, indices))
 
 
-def swap(board, columns):
+def swap(board, indices):
     new_board = board.copy()
-    new_board[:, columns[::-1]] = board[:, columns]  # swap columns ...
+    new_board[indices[::-1]] = board[indices]  # swap
     return new_board
 
 
 def identity(value):
     return value
+
+
+def factorial(value, cache={}):
+    if value not in cache:
+        cache[value] = math.factorial(value)
+    return cache[value]
+
+
+def ifactoradic(perm):  # convert a permutation of indices to its factorial base as a generator ...
+    perm = numpy.asarray(perm)
+    return (digit - numpy.sum(perm[:index] < digit) for index, digit in enumerate(perm))
+
+
+def permutation_lexi_order(perm):  # get the decimal lexicographical order of a giving permutation ...
+    return sum(imap(numpy.multiply, ifactoradic(perm), imap(factorial, reversed(xrange(len(perm))))))
+
+
+def idecimal_to_factoradic(dec_value, length):  # get the permutation of a giving decimal lexicographical order
+    for factorial_base in imap(factorial, reversed(xrange(length))):
+        digit, perm_order = divmod(dec_value, factorial_base)
+        yield digit
+
+
+def decimal_to_factoradic(dec_value, length):
+    return tuple(idecimal_to_factoradic(dec_value, length))
+
+
+def dec_lexi_order_to_ipermutation(dec_perm_order, length):
+    # get the permutation as an iterator from its the decimal lexicographical order
+    return imap(list(xrange(length)).pop, idecimal_to_factoradic(dec_perm_order, length))
+
+
+
 

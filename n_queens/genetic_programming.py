@@ -8,7 +8,7 @@ each member now is a computer program.
 
 The same rules still apply, population -> selection -> crossbreeding -> repeat ...
 
-This time around we are not looking for a computer program, where
+This time around we are looking for a computer program, where
 a computer program can be defined as a set of operator and operands, usually visualized
 as a tree.
 
@@ -23,7 +23,7 @@ may be easier to run the program concurrently.
 """
 __author__ = 'samy.vilar'
 
-from itertools import izip, repeat, imap, starmap, cycle
+from itertools import izip, repeat, imap, starmap, cycle, takewhile
 
 import numpy
 from numpy.random import randint, random
@@ -37,15 +37,31 @@ def program_generator(max_depth, number_of_queens, initial_board):
         class Program(object):  # program (chromosome ... ) is nothing more then sequence of random swaps ...
             def __init__(self, swaps):
                 self.initial_board = initial_board
+                # self.initial_board = new_random_board(number_of_queens)
                 self.swaps = tuple(swaps)
 
             def __len__(self):
                 return len(self.swaps)
 
-            def __call__(self):
-                if not hasattr(self, 'collisions'):
-                    self.collisions = calc_collision(reduce(swap, self.swaps, self.initial_board))
-                return self.initial_board.size - self.collisions
+            @property
+            def collisions(self):
+                if not hasattr(self, '_collisions'):
+                    board = self.initial_board
+                    collision = calc_collision(board)
+                    index = -1
+                    for index, columns in enumerate(takewhile(lambda _: collision, self.swaps)):
+                        board = swap(board, columns)
+                        collision = calc_collision(board)
+                        if not collision:
+                            break
+                    if not collision:
+                        self.swaps = self.swaps[:index + 1]
+                    self._collisions = collision
+                return self._collisions
+                    # self.collisions = calc_collision(reduce(swap, self.swaps, self.initial_board))
+
+            def __call__(self):  # fitness function ...
+                return number_of_queens - self.collisions
 
             def __getitem__(self, item):  # if slicing return a new program otherwise return swap value ...
                 return ((isinstance(item, slice) and Program) or identity)(self.swaps[item])
@@ -124,14 +140,15 @@ def get_genetic_operators(number_of_queens, get_new_program):
     return genetic_operators
 
 
-def solve_n_queens_problem(number_of_queens, population_size=10**3, max_depth=10**2, max_iterations=10**6):
+def solve_n_queens_problem(number_of_queens, population_size=10**3, max_depth=200, max_iterations=10**3):
     board = new_random_board(number_of_queens)
+
     fitness_function = apply
     sort_population = get_sort_population(fitness_function)
     create_new_program = program_generator(max_depth, number_of_queens, board)
 
     def error_func(program):
-        return board.size - fitness_function(program)
+        return program.collisions
 
     best_program = genetic_algorithm(
         sort_population(map(apply, repeat(create_new_program, population_size))),
@@ -143,4 +160,4 @@ def solve_n_queens_problem(number_of_queens, population_size=10**3, max_depth=10
         sample_percentage=.35,
     )
 
-    return reduce(swap, best_program.swaps, board)
+    return reduce(swap, best_program.swaps, best_program.initial_board)

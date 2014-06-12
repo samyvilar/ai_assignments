@@ -34,25 +34,23 @@ until we hit the local_minimum == global_minimum, or computational resources exh
 
 
 We can represent a solution as a sequence of n numbers each from 0 to n - 1.
-where the ith value represents the column position of a queen in the ith row,
-for performance reasons we will use a n-by-n matrix representing our chess board,
-and a value of 1 to represent a queen, this way we only need to sum up diagnols
-to measure collisions.
+where the ith value represents the column position of a queen in the ith row.
 
 We start by randomly placing a queen in each row,
 define our objective function as the number of collisions of a giving solution,
-to this we simply add all the queens in each row, column, left and right diagonals.
+note we only need the diagonal collisions since each column/row index pair is unique ...
 
 Assume this is our best solution, if not look for a better solution, around this solution.
 We do this by simply swapping a column at random.
 
 Repeat until solution found.
 """
+
 __author__ = 'samyvilar'
 
 import numpy
 
-from utils import calc_collision, new_random_board, sample, swap
+from utils import diagonal_collisions, new_random_board, sample, swap, py_diagonal_collisions
 
 
 def simulated_annealing(
@@ -92,21 +90,22 @@ def simulated_annealing(
 
 
 def solve_n_queens_problem(number_of_queens, max_iterations=10000, population_size=1000):
-    assert number_of_queens > 0
-    if not number_of_queens:
-        return []
-    elif number_of_queens == 1:  # solution is trivial for n = 1
-        return [1]
-    elif number_of_queens < 4:   # no solution exists for n = (2, 3)
+    assert number_of_queens >= 0
+    if not number_of_queens:        # solution is trivial for n in {0, 1}
+        return ()
+    elif number_of_queens == 1:     # solution is trivial for n = 1
+        return 1,
+    elif number_of_queens < 4:      # no solution exists for n in {2, 3}
         return ()
 
     def permutation_function(current_solution, row_indices=numpy.arange(number_of_queens)):
-        return swap(current_solution, sample(row_indices, 2))   # swap two random columns.
+        return swap(current_solution, sample(row_indices, 2))   # swap two random rows.
 
     return simulated_annealing(
-        calc_collision,
+        diagonal_collisions,
         new_random_board(number_of_queens),
-        permutation_function, max_iterations=max_iterations,
+        permutation_function,
+        max_iterations=max_iterations,
         temperature=population_size
     )
 

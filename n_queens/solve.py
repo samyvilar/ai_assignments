@@ -36,7 +36,7 @@ import simulated_annealing
 import genetic_algorithm
 import genetic_programming
 
-from utils import calc_collision, py_diagonal_collisions
+from utils import calc_collision, py_diagonal_collisions, new_initialized_board
 
 packages = simulated_annealing, genetic_algorithm, genetic_programming
 
@@ -66,10 +66,11 @@ if __name__ == '__main__':
         end = time.time()
         if py_diagonal_collisions(solution):
             print('failed to locate solution increase the number of iterations!')
+
         print('algorithm: {algorithm} error: {error} time: {elapse_time}s number_of_queens: {number_of_queens}'.format(
             algorithm=package.__name__,
-            error=calc_collision(solution),
+            error=py_diagonal_collisions(solution),
             elapse_time=end - start,
             number_of_queens=number_of_queens,
         ))
-        print("closest solution: \n{0}\n\n".format(solution))
+        print("closest solution: perm {0} \n{1}\n\n".format(solution, new_initialized_board(solution)))
