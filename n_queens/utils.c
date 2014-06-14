@@ -190,7 +190,7 @@
 })
 
 
-#define perm_elem_type unsigned char
+#define perm_elem_type unsigned
 
 // diaganol collision occur between two points when there |delta(x cords)| == |delta(y cords)|
 // ie the diff in their corresponding x and y coordinates are the same
@@ -735,29 +735,95 @@ void perm_from_inv_seq_wt(perm_elem_type *inv_seq, perm_elem_type *dest, unsigne
     recycle_tree(tree);
 }
 
-// get permutation from inversion vector using merge sort ...
-// create a list of values from [0 ... n-1]
-// split the list in half, apply recursively until a single element is reached in which case simply return ...
-// when returning we want both halfs sorted in ascending order, when we merge
-void _perm_from_inv_seq_ms(perm_elem_type *weights, perm_elem_type *dest, unsigned int perm_length) {
-    if (perm_length < 2)
+// get permutation from inversion vector using divide & conquer ...
+// we want indices to contain the index of element i for indices[i] so perm[indices[i]] = i
+// for |n| == 1 this is obviously true since there no other entries
+// for |n| > 1 we need to account for all the indices that have being previously inserted
+// to merge take the whole left since it contains the indices for elements [0 ... n/2)
+// the right contains the indices for elements [n/2 ... n - 1)
+// we need update the right in order to take into account all the previous entries
+// take the whole left and start taking a right element, count
+// since they would oviously shift the entry to the right ...
+
+
+// naive approach: initilize dest to inv_vect,
+// iterate backwards over inv_vect at each index i, check all the elements starting at i + 1
+// are greater than or equal to dest[i], if they are increment by one otherwise continue
+// in essence we are shifting conflicting positions ...
+// once complete argsort dest
+// divide & conquer
+// divide indices & dest in half, apply recursively to each half upon returning
+//  at indices[i] contains the location of i within the permutation, and dest contains its argsort (permutation).
+// to merge:
+// we want to both to update the indices and merge the locations we do this by iterating each half
+// if the left is smaller than or equal to
+// the entry on the (right + all the elements on the left that are smaller than it, those that have being taken already),
+// no need to update, simply take the left loc.
+// otherwise the right is smaller so is its location is its loc plus the number of elements on the right,
+// and we also add the number of elements to the right that have already being taken (ie they are smaller than it)
+// once exhausted take all the remaining left indices or
+// take all the remaining right indices on the right plus the number of right elements
+// update each entry with the number of right elements since they are all smaller than it.
+void _perm_from_inv_seq_ms(perm_elem_type *offsets, perm_elem_type *indices, unsigned int cnt) {
+    if (cnt < 2)
         return ;
-//
-//    typeof(perm_length) left_cnt = half(perm_length), right_cnt = perm_length - left_cnt;
-//    typeof(perm) left, right;
-//    _permutation_inversion_ms((left = weights),             dest, left_cnt);
-//    _permutation_inversion_ms((right = &perm[left_cnt]), dest, right_cnt);
 
+    typeof(cnt) left_cnt = half(cnt), right_cnt = cnt - left_cnt;
+    typeof(offsets) left = offsets, right = &offsets[left_cnt];
+    typeof(indices) left_indices = indices, right_indices = &indices[left_cnt];
+
+    _perm_from_inv_seq_ms(left,  left_indices,  left_cnt);
+    _perm_from_inv_seq_ms(right, right_indices, right_cnt);
+
+    typeof(indices[0]) argsort[cnt];
+    unsigned word_t index, left_index = 0;
+    for (index = 0; left_cnt && right_cnt; index++)
+        if (left[left_indices[left_index]] <= (right[*right_indices] + left_index)) { // take left entry ...
+            argsort[index] = left_indices[left_index++];
+            left_cnt--;
+        } else {
+            argsort[index] = half(cnt) + *right_indices;
+            right[*right_indices++] += left_index; // update right to account for all the entries that are smaller than it.
+            right_cnt--;
+        }
+
+    if (right_cnt)
+        while (right_cnt--) {
+            argsort[index++] = half(cnt) + *right_indices;
+            right[*right_indices++] += left_index;
+        }
+    else
+        memcpy(&argsort[index], &left_indices[left_index], left_cnt * sizeof(left_indices[0]));
+
+    memcpy(indices, argsort, sizeof(argsort));
 }
 
-void perm_from_inv_seq_ms(perm_elem_type *weights, perm_elem_type *dest, unsigned int perm_length) {
+void perm_from_inv_seq_ms(perm_elem_type *inversion_vect, perm_elem_type *perm, unsigned int cnt) {
+    typeof(inversion_vect[0]) buffer[cnt];
+    _perm_from_inv_seq_ms(
+        memcpy(buffer, inversion_vect, sizeof(buffer)),
+        memset(perm, 0, sizeof(perm[0]) * cnt),
+        cnt
+    );
+}
+
+// naive approach simply count the number of empty space to the left
+void perm_from_inv_seq_naive(perm_elem_type *inversion_vect, perm_elem_type *perm, unsigned int cnt) {
+    memset(perm, -1, sizeof(perm[0]) * cnt);
+
     unsigned word_t index;
-    for (index = 0; index < perm_length; index++)
-        *dest = index;
-    typeof(weights[0]) buffer[perm_length];
-    _perm_from_inv_seq_ms(memcpy(buffer, weights, sizeof(buffer)), dest, perm_length);
-}
+    for (index = 0; index < cnt; index++) {
+        typeof(inversion_vect[0]) empty_cnt = inversion_vect[index];
+        typeof(index) loc;
 
+        for (loc = 0; empty_cnt || (perm[loc] != (typeof(inversion_vect[0]))-1); loc++) // while we have consumed enough empty slots or we are not in empty spot ...
+            if (empty_cnt && perm[loc] == (typeof(inversion_vect[0]))-1) // empty spot
+                empty_cnt--;
+
+//        if (likely(loc < cnt))
+            perm[loc] = index;
+    }
+}
 
 
 void random_perm(perm_elem_type *dest, unsigned cnt) {
@@ -776,10 +842,13 @@ int main() {
 //        18, 15  ,1  ,6  ,5 ,14 ,13 ,16  ,4  ,7 ,
 //        8  ,0 ,17 ,11 ,10 ,19  ,2  ,3  ,9 ,12
 ////    3, 0, 4 ,1 ,5 ,2
-//    //    5,4,3,2,1,0
+//        5,4,3,2,1,0
 //    };
 
-    perm_elem_type count = 128;
+//    unsigned count = sizeof(values)/sizeof(values[0]);
+//    perm_elem_type values[] = {4, 1, 5, 2, 0, 3};
+
+    unsigned count = 50000;
     perm_elem_type values[count];
     random_perm(values, count);
 //    int index;
@@ -789,24 +858,24 @@ int main() {
     #define REPEAT_CNT 1
 
     #define perm_inv_naive() ({permutation_inversion_naive(values, inv_perm, count); })
-    #define timed_perm_inv_naive() timeit_repeat(perm_inv_naive, REPEAT_CNT)
-    printf("permutation_inversion_naive: %.4fs \n", timed(timed_perm_inv_naive));
+//    #define timed_perm_inv_naive() timeit_repeat(perm_inv_naive, REPEAT_CNT)
+    printf("permutation_inversion_naive: %.4fs \n", timed(perm_inv_naive));
 //    permutation_inversion_naive(values, inv_perm, count);
 //    for (index = 0; index < count; index++)
 //        printf("%u ", inv_perm[index]);
 //    printf("\n");
 
     typeof(inv_perm) inv_perm_wt;
-    #define perm_inv_tree() ({permutation_inversion_wt(values, inv_perm_wt, count);})
-    #define timed_perm_inv_tree() timeit_repeat(perm_inv_tree, REPEAT_CNT)
-    printf("permutation_inversion_weight_tree: %.4fs ", timed(timed_perm_inv_tree));
+    #define perm_inv_wt() ({permutation_inversion_wt(values, inv_perm_wt, count);})
+//    #define timed_perm_inv_tree() timeit_repeat(perm_inv_tree, REPEAT_CNT)
+    printf("permutation_inversion_wt: %.4fs ", timed(perm_inv_wt));
     printf( (memcmp(inv_perm_wt, inv_perm, sizeof(inv_perm))) ? "failed!! \n": "ok. \n");
 
 
     typeof(inv_perm) inv_perm_ms;
     #define perm_inv_ms() ({permutation_inversion_ms(values, inv_perm_ms, count);})
-    #define timed_perm_inv_ms() timeit_repeat(perm_inv_ms, REPEAT_CNT)
-    printf("permutation_inversion_merge_sort: %.4fs ", timed(timed_perm_inv_ms));
+//    #define timed_perm_inv_ms() timeit_repeat(perm_inv_ms, REPEAT_CNT)
+    printf("permutation_inversion_ms: %.4fs ", timed(perm_inv_ms));
     printf( (memcmp(inv_perm_ms, inv_perm, sizeof(inv_perm))) ? "failed!! \n" : "ok. \n");
 //    permutation_inversion_ms(values, inv_perm, count);
 //    for (index = 0; index < count; index++)
@@ -818,10 +887,24 @@ int main() {
 //        printf("%u ", inv_perm[index]);
 //    printf("\n");
 
+    printf("\n");
 
-    typeof(values) temp;
-    perm_from_inv_seq_wt(inv_perm, temp, count);
-    printf("perm_from_inv_seq_weight_tree %s \n", (memcmp(temp, values, sizeof(values))) ? "failed!!" : "ok.");
+
+    typeof(values) values_ms;
+    #define inv_ms() ({ perm_from_inv_seq_ms(inv_perm, values_ms, count); })
+    printf("perm_from_inv_seq_ms %.4fs ", timed(inv_ms));
+    printf((memcmp(values_ms, values, sizeof(values))) ? "failed!!\n" : "ok.\n");
+
+    typeof(values) values_wt;
+    #define inv_wt() ({ perm_from_inv_seq_wt(inv_perm, values_wt, count); })
+    printf("perm_from_inv_seq_weight_tree %.4fs ", timed(inv_wt));
+    printf((memcmp(values_wt, values, sizeof(values))) ? "failed!!\n" : "ok.\n");
+
+
+    typeof(values) values_naive;
+    #define inv_naive() ({ perm_from_inv_seq_naive(inv_perm, values_naive, count); })
+    printf("perm_from_inv_seq_naive: %.4fs ", timed(inv_naive));
+    printf((memcmp(values_naive, values, sizeof(values))) ? "failed!!\n" : "ok.\n");
 
 
 
