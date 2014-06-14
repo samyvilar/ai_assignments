@@ -645,13 +645,15 @@ void permutation_inversion_ms(perm_elem_type *perm, perm_elem_type *dest, unsign
 
 
 // n^2 solution: count the number entries that precreded elemnt i and are greater than i
-void permutation_inversion_naive(perm_elem_type *perm, perm_elem_type *dest, unsigned int perm_length) {
-    memset(dest, 0, sizeof(*dest) * perm_length); // initialized all counts to zero.
+void permutation_inversion_naive(perm_elem_type *perm, perm_elem_type *dest, unsigned int cnt) {
+    memset(dest, 0, sizeof(*dest) * cnt); // initialized all counts to zero.
 
-    while (perm_length--){ // count greater preceded values ...
+    while (cnt--){ // count greater preceded values ...
         perm_elem_type *current;
-        for (current = &perm[perm_length]; current >= perm; current--)
-            dest[perm[perm_length]] += (*current > perm[perm_length]);
+        for (current = &perm[cnt]; current >= perm; current--)
+            dest[perm[cnt]] += (*current > perm[cnt]);
+//            if (*current > perm[cnt])
+//                dest[perm[cnt]]++;
     }
 }
 
@@ -747,18 +749,20 @@ void perm_from_inv_seq_wt(perm_elem_type *inv_seq, perm_elem_type *dest, unsigne
 
 
 // naive approach: initilize dest to inv_vect,
-// iterate backwards over inv_vect at each index i, check all the elements starting at i + 1
-// are greater than or equal to dest[i], if they are increment by one otherwise continue
+// iterate backwards over dest at each index i, check all the elements starting at i + 1
+// are greater than or equal to dest[i], if they are increment those that are otherwise continue
 // in essence we are shifting conflicting positions ...
 // once complete argsort dest
-// divide & conquer
+
+// divide & conquer:
 // divide indices & dest in half, apply recursively to each half upon returning
 //  at indices[i] contains the location of i within the permutation, and dest contains its argsort (permutation).
 // to merge:
-// we want to both to update the indices and merge the locations we do this by iterating each half
+// we want to both update the offsets (to account for previous entries) and merge the locations
+// we do this by iterating each half offsets in their corresponding ascending manner using their agsort ...
 // if the left is smaller than or equal to
 // the entry on the (right + all the elements on the left that are smaller than it, those that have being taken already),
-// no need to update, simply take the left loc.
+// no need to update, simply consume left loc.
 // otherwise the right is smaller so is its location is its loc plus the number of elements on the right,
 // and we also add the number of elements to the right that have already being taken (ie they are smaller than it)
 // once exhausted take all the remaining left indices or
@@ -777,12 +781,11 @@ void _perm_from_inv_seq_ms(perm_elem_type *offsets, perm_elem_type *indices, uns
 
     typeof(indices[0]) argsort[cnt];
     unsigned word_t index, left_index = 0;
-    for (index = 0; left_cnt && right_cnt; index++)
-        if (left[left_indices[left_index]] <= (right[*right_indices] + left_index)) { // take left entry ...
+    for (index = 0; (left_index < left_cnt) && right_cnt; index++)
+        if (left[left_indices[left_index]] <= (right[*right_indices] + left_index))  // take left entry ...
             argsort[index] = left_indices[left_index++];
-            left_cnt--;
-        } else {
-            argsort[index] = half(cnt) + *right_indices;
+        else {
+            argsort[index] = left_cnt + *right_indices;
             right[*right_indices++] += left_index; // update right to account for all the entries that are smaller than it.
             right_cnt--;
         }
@@ -793,7 +796,7 @@ void _perm_from_inv_seq_ms(perm_elem_type *offsets, perm_elem_type *indices, uns
             right[*right_indices++] += left_index;
         }
     else
-        memcpy(&argsort[index], &left_indices[left_index], left_cnt * sizeof(left_indices[0]));
+        memcpy(&argsort[index], &left_indices[left_index], (left_cnt - left_index) * sizeof(left_indices[0]));
 
     memcpy(indices, argsort, sizeof(argsort));
 }
@@ -848,7 +851,7 @@ int main() {
 //    unsigned count = sizeof(values)/sizeof(values[0]);
 //    perm_elem_type values[] = {4, 1, 5, 2, 0, 3};
 
-    unsigned count = 50000;
+    unsigned count = 60000;
     perm_elem_type values[count];
     random_perm(values, count);
 //    int index;
