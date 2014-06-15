@@ -26,7 +26,7 @@
     #define word_t char
     #define word_t_size 1
 #else
-    #error "Unable to determing intergral type for pointer type"
+    #error "Unable to determine machine word type"
 #endif
 
 
@@ -48,16 +48,16 @@
 
 #define instr(instr, size) instr ## size
 
-#define swap_xchg(a, b) (\
-    {switch(sizeof(a)) {\
-        case 1: instr(swap_xchg_, 1)(a, b); break ;\
-        case 2: instr(swap_xchg_, 2)(a, b); break ;\
-        case 4: instr(swap_xchg_, 4)(a, b); break ;\
-        case 8: instr(swap_xchg_, 8)(a, b); break ;}})
-
+#define swap_xchg(a, b) ({                              \
+    switch(sizeof(a)) {                                 \
+        case 1: instr(swap_xchg_, 1)(a, b); break ;     \
+        case 2: instr(swap_xchg_, 2)(a, b); break ;     \
+        case 4: instr(swap_xchg_, 4)(a, b); break ;     \
+        case 8: instr(swap_xchg_, 8)(a, b); break ;     \
+    }                                                   \
+})
 
 #define swap swap_xchg
-
 
 #define bit_size(a) (sizeof(a) * CHAR_BIT)
 
@@ -75,54 +75,6 @@
 #define uint_byt_t(_byt_mag) uint ## _byt_mag ## byt
 #define sint_byt_t(_byt_mag) sint ## _byt_mag ## byt
 
-#define instr_postfix_1 "b" // byte
-#define instr_postfix_2 "w" // short
-#define instr_postfix_4 "l" // int
-#define instr_postfix_8 "q" // long
-#define get_instr_postfix(size) instr_postfix_ ## size
-#define att_instr(instr_name, operand_size) instr_name get_instr_postfix(operand_size)
-
-#define intrsc_signat(ret_type) __inline ret_type __attribute__((__gnu_inline__, __always_inline__, __artificial__))
-#ifdef __INTEL_COMPILER // icc doesn't have __builtin_clzs or __builtin_ctz which is kind of strange
-    intrsc_signat(unsigned) __builtin_clzs(unsigned short x) { // count leading zeros, return 15 if all zeros ...
-        asm     (att_instr("bsr", 2) " %0, %0\t\nxor $15, %0\t\n" : "=r" (x) : "0"(x));
-        return x;
-    }
-
-    intrsc_signat(unsigned) __builtin_ctzs(unsigned short x) { // count trailing zeros, return 0 if 0 ...
-        asm (att_instr("bsf", 2) " %0, %0" : "=r" (x) : "0"(x));
-        return x;
-    }
-
-    intrsc_signat(unsigned) __builtin_popcounts(unsigned short x) { // count set 1s return 0 if 0
-        return __builtin_popcount(x) - 8;
-    }
-#endif
-
-// there is no instruction that supports bit scan on a char ...
-
-#define __builtin_clzb(x) (cnt_leadn_zrs_16((unsigned char)(x)) ^ 8) // subtract leading 8 zeros ...
-#define __builtin_ctzb(x) cnt_trlng_zrs_16((unsigned char)(x))
-#define __builtin_popcountb(x) bit_ones_cnt_16((unsigned char)(x))
-
-
-#define cnt_leadn_zrs_8 __builtin_clzb
-#define cnt_leadn_zrs_16 __builtin_clzs
-#define cnt_leadn_zrs_32 __builtin_clz
-#define cnt_leadn_zrs_64 __builtin_clzll
-
-
-#define cnt_leadn_zrs(x) ({\
-    int zero_cnt; \
-    switch(sizeof(x)){\
-        case 1: zero_cnt = cnt_leadn_zrs_8(x); break; \
-        case 2: zero_cnt = cnt_leadn_zrs_16(x); break ; \
-        case 4: zero_cnt = cnt_leadn_zrs_32(x); break ; \
-        case 8: zero_cnt = cnt_leadn_zrs_64(x); break ; \
-   } zero_cnt; })
-
-#define leadn_one_index(x) (bit_size(x) - cnt_leadn_zrs(x))
-
 #define _rshift_(a, _mag, _type) ({                                             \
     typeof(a) _r = (a);                                                         \
     switch (sizeof(a)) {                                                        \
@@ -136,49 +88,14 @@
 #define rshift_logcl(a, _mag) _rshift_(a, _mag, uint_byt_t) // arithmetic right shift (extending sign)
 #define rshift_airth(a, _mag) _rshift_(a, _mag, sint_byt_t) // logical right shift (shifts in zeros)
 
-#define sign_bit_ext(a) rshift_airth(a, (bit_size(a) - 1))  // extends the sign bit creating a mask of ones or zeros..
-
-#define sign_bit_bool(a) rshift_logcl(a, (bit_size(a) - 1)) // returns 0 if sign bit is 0 or 1 if sign bits is 1 (so it just moves the sign from ms loc to ls loc ...)
-
-#define bool_by_bit_shft(a) ({typeof(a) _sb = (a); rshift_logcl(_sb, leadn_one_index(_sb));})
-#define bool_by_logical(a) (!!(a))
-
-// returns the absolute value of (a) assumes (a) is signed and underlying bit repr is twos complement
-// -a == ~-a + 1 == (-a ^ -1) + 1
-#define abs_by_sign_bit(a) ({typeof(a) _val = (a); ((_val ^ sign_bit_ext(_val)) + sign_bit_bool(_val)); })
-#define abs_by_cmp(a) (((a) < 0) ? (((a) ^ (typeof(a))-1) + (typeof(a))1) : (a))
-
-#define abs abs_by_sign_bit
-
-// two bit sequences equal if the a == b => bool(a ^ b) ^ 1
-
-#define not_eq_by_xor(a, b) bool_by_bit_shft((a) ^ (b))
-#define eq_by_xor(a, b) (bool_by_bit_shft((a) ^ (b)) ^ (typeof(a))1)
-
-#define eq_by_cmp(a, b) ((a) == (b))
-
-#define eq_bool eq_by_xor
-
 #define half(a)     rshift_logcl(a, 1)
 #define quarter(a)  rshift_logcl(a, 2)
 
-
-#define min_by_cmp(a, b)        (((a) < (b)) ? (a) : (b))
-#define max_by_cmp(a, b)        (((a) < (b)) ? (b) : (a))
-// branchless min/max counterparts ...
-
-#define min_by_subt(a, b)    	((b) + (((a) - (b)) & sign_bit_ext((a) - (b))))
-#define max_by_subt(a, b)		((a) + (((b) - (a)) & sign_bit_ext((a) - (b))))
-
-#define min_by_xor(a, b)    	((b) ^ (((a) ^ (b)) & sign_bit_ext((a) - (b))))
-#define max_by_xor(a, b)        ((a) ^ (((a) ^ (b)) & sign_bit_ext((a) - (b))))
-
-#define min min_by_xor
-#define max max_by_xor
-
-
 #define unlikely(expr) __builtin_expect(expr, 0)
 #define likely(expr) __builtin_expect(expr, 1)
+
+#define is_non_null(v) (v)
+#define is_null(v) (!is_non_null(v))
 
 
 #define timed(func) ({                              \
@@ -190,17 +107,17 @@
 })
 
 
-#define perm_elem_type unsigned
+#define perm_elem_type unsigned char
 
 // diaganol collision occur between two points when there |delta(x cords)| == |delta(y cords)|
-// ie the diff in their corresponding x and y coordinates are the same
+// ie the mag in their corresponding x and y coordinates equal
 // and theres no other queen in between them ....
 // there can never be more than n - 1 diagonal collision in any giving board of size n with n queens ...
 // assuming there are no row or column collisions (col_cords has unique values)
 // there are a total of 4n diagnols in each board of size n
 // a queen may either be in (y cord - x cord) diag and/or the ((n - y cord) - x cord) diag respectively
-unsigned int diag_collisions(char *col_cords, unsigned int board_size) {
-    long long
+unsigned int diag_collisions(perm_elem_type *col_cords, unsigned int board_size) {
+    word_t
         index,
         cnts[4 * board_size],
         sum = 0;
@@ -216,108 +133,17 @@ unsigned int diag_collisions(char *col_cords, unsigned int board_size) {
         cols_l[(board_size - col_cords[index]) - index]++;
     }
 
-    for (index = 0; index < sizeof(cnts)/sizeof(cnts[0]); index++)
+    for (index = 0; index < sizeof(cnts)/sizeof(cnts[0]); index++) // count collisions number of queens in max(diag, 1) - 1
         if (cnts[index])
             sum += cnts[index] - 1;
 //        sum += max(cnts[index], 1) - 1;
 
     return sum;
-
-//    unsigned word_t
-//        row_index, col_index, diag_col_cnt = 0;
-//
-//    for (row_index = 0; row_index < board_size; row_index++) // x coordinates ...
-//        for (col_index = 0; col_index < board_size; col_index++) // y coordinates ...
-//            diag_col_cnt += eq_bool(
-//                abs(col_cords[row_index] - col_cords[col_index]),
-//                abs(row_index - col_index)
-//            );
-//
-//    return diag_col_cnt - board_size;
-
-//    unsigned char
-//        row_cnt = board_size,
-//        col_cnt,
-//        diag_col = 0,
-//        index;
-//
-//    while (row_cnt--)
-//    {
-//        col_cnt = board_size;
-//        while (col_cnt--)
-//            diag_col
-//              += ((col_cnt > row_cnt) ? (col_cnt - row_cnt) : (row_cnt - col_cnt))
-//                    ==
-//              (
-//                (col_cords[row_cnt] > col_cords[col_cnt])
-//              ? (col_cords[row_cnt] - col_cords[col_cnt])
-//              : (col_cords[col_cnt] - col_cords[row_cnt])
-//              );
-//    }
-//    return diag_col - board_size; // subtract all the points that collide with themselfs ...
 }
 
 
-// Calculate the collisions over the left and right diagonals of a 2-D chess board filled with 0s and 1s
-// board contains the y coordinates ...
-unsigned int collisions(unsigned char *board, unsigned int board_size) {
-    unsigned int
-        diagonal_mag = board_size,
-        (*diagonal_sums)[4] = calloc(board_size, sizeof(unsigned int[4])),  // keep track of diagnol sums by mag each board has board_size sizes ...
-        *current_diagonals = diagonal_sums[board_size - 1];
 
-    unsigned char *top_off_center_rows = (board + (board_size * board_size)), *bottom_off_center_rows;
-    while (diagonal_mag--) // do center diagnols first since theres only two of them ...
-    {
-        top_off_center_rows -= board_size;
-        current_diagonals[1] += top_off_center_rows[board_size - diagonal_mag - 1]; // left ...
-        current_diagonals[0] += top_off_center_rows[diagonal_mag]; // right
-    }
-
-    unsigned int diagonals = board_size;
-    while (diagonals--)  // go over all the remaining off center diagonals, theres 4 for each magnitude ...
-    {
-        diagonal_mag = diagonals;
-        current_diagonals = diagonal_sums[diagonal_mag - 1];
-
-        bottom_off_center_rows   = board + (board_size * board_size);   // bottom rows
-        top_off_center_rows      = board + (diagonal_mag * board_size); // top rows
-
-        while (diagonal_mag--) // do off-center diagnols, off-center above and below in each direction ...
-        {
-            bottom_off_center_rows  -= board_size; // bottom off-center
-            current_diagonals[0]    += bottom_off_center_rows[diagonal_mag]; // right
-            current_diagonals[1]    += bottom_off_center_rows[board_size - diagonal_mag - 1]; // left
-
-            top_off_center_rows     -= board_size; // top off-center ...
-            current_diagonals[2]    += top_off_center_rows[(diagonals - diagonal_mag - 1)]; // left
-            current_diagonals[3]    += top_off_center_rows[(board_size - (diagonals - diagonal_mag))]; // right
-        }
-    }
-
-    #define sum_collisions diagonal_mag
-    sum_collisions = 0;
-    while (--board_size)  // skip diagonals of size 1, since they can't have collisions ...
-    {   // go over all diagonals, for each approproate size calculate collision to their sum - 1
-        current_diagonals = diagonal_sums[board_size];
-        sum_collisions  += (current_diagonals[0] - (current_diagonals[0] != 0)) // subtract 1 if non-zero ...
-                        +  (current_diagonals[1] - (current_diagonals[1] != 0))
-                        +  (current_diagonals[2] - (current_diagonals[2] != 0))
-                        +  (current_diagonals[3] - (current_diagonals[3] != 0));
-    }
-
-    free(diagonal_sums);
-    return sum_collisions;
-    #undef sum_collisions
-}
-
-
-#define is_non_null(v) (v)
-#define is_null(v) (!is_non_null(v))
-
-#define word_type unsigned int
-// Scapegoat binary tree, each node has their left child containing greater or equal values,
-// right node containg smaller values ...
+// weight balanced tree ...
 #define TREE_BLOCK_MAG 128
 #define ALPHA    0.22 //0.288
 #define EPSILON  0.005
@@ -329,7 +155,7 @@ typedef struct tree_type {
     unsigned _key, _weight;
 } tree_type;
 
-#define left_tree(t) (*(tree_type **)t)
+#define left_tree(t) (t->_left)
 #define set_left_tree(t, value) (left_tree(t) = (value))
 #define right_tree(tree) (tree->_right)
 #define set_right_tree(tree, value) (right_tree(tree) = (value))
@@ -341,7 +167,7 @@ typedef struct tree_type {
 #define set_weight(tree, value) (weight(tree) = (value))
 
 tree_type *recycled_trees = NULL, *allocated_trees = (tree_type[TREE_BLOCK_MAG]){{}};
-word_type available_trees = TREE_BLOCK_MAG;
+word_t available_trees = TREE_BLOCK_MAG;
 tree_type *tree_stack[100] = {NULL}, **tree_stack_p = tree_stack;
 
 #define push_tree(tree) (*tree_stack_p++ = (tree))
@@ -353,7 +179,6 @@ tree_type *tree_stack[100] = {NULL}, **tree_stack_p = tree_stack;
 void recycle_tree(tree_type *tree) {
     recycle_tree_macro(tree);
 }
-
 
 #define allocate_tree_macro() ({                                                        \
     tree_type *_alloc_tree_;                                                            \
@@ -371,40 +196,26 @@ tree_type *allocate_tree() {
     return allocate_tree_macro();
 }
 
-#define new_tree(key, weight) ({                        \
-    tree_type *_nw_tree_ = allocate_tree_macro();       \
-    set_key(_nw_tree_, key);                            \
-    set_weight(_nw_tree_, weight);                      \
-    set_right_tree(_nw_tree_, NULL);                    \
-    _nw_tree_; })
+#define init_tree(tree, _key, _weight) ({       \
+    set_key(tree, _key);                        \
+    set_right_tree(tree, NULL);                 \
+    set_weight(tree, _weight);                  \
+tree; })
+
+#define init_empty_tree(tree, _key, _value) ({  \
+    set_key(tree, _key);                        \
+    set_weight(tree, 1);                        \
+    set_right_tree(tree, NULL);                 \
+    set_left_tree(tree, _value);                \
+tree; })
+
+#define new_tree(key, weight) ({ tree_type *_n_tree_ = allocate_tree_macro();  init_tree(_n_tree_, key, weight); _n_tree_;})
+#define new_leaf(key) new_tree(key, 1)
+
+#define new_empty_tree() ({ tree_type *tree = allocate_tree(); set_left_tree(tree, NULL); tree; })
 
 #define update_weight(tree) set_weight(tree, ((weight(left_tree(tree)) + weight(right_tree(tree)))))
 
-//tree_type *__temp__;
-//#define left_rotation_macro(tree)\
-//    (                                                                                     \
-//        (__temp__ = left_tree(tree)),/* save left tree */                                 \
-//        xor_swap(key(tree), key(right_tree(tree))), /* swap root and left key  */       \
-//        set_left_tree(tree, right_tree(tree)), /* save right tree */                      \
-//        set_right_tree(tree, right_tree(right_tree(tree))), /* move sub right tree up */              \
-//        set_right_tree(left_tree(tree), left_tree(left_tree(tree))),/* move right-left tree to left-right position */  \
-//        set_left_tree(left_tree(tree), __temp__),  /* move left tree down*/     \
-//        update_weight(left_tree(tree))                                          \
-//   )
-//#define left_rotation_macro(tree) ({                                  \
-//    tree_type *l_tree = left_tree(tree), *r_tree = right_tree(tree);  \
-//    typeof(key(tree)) root_key = key(tree);                           \
-//                                                                      \
-//    set_key(tree, key(r_tree));                                       \
-//    set_key(r_tree, _key);                                            \
-//                                                                      \
-//    set_left_tree(tree, r_tree);                                      \
-//    set_right_tree(tree, right_tree(r_tree));                         \
-//    set_right_tree(r_tree, left_tree(r_tree));                        \
-//                                                                      \
-//    set_left_tree(r_tree, l_tree);                                    \
-//    update_weight(r_tree);                                            \
-//})
 
 #define left_rotation_macro(tree) ({                                \
     typeof(tree) r_tree = right_tree(tree);                         \
@@ -416,45 +227,6 @@ tree_type *allocate_tree() {
 })
 
 
-//void left_rotation(tree_type *tree)
-//{
-//    tree_type *orig_left_tree = left_tree(tree);/* save left tree */
-//    xor_swap(key(tree), key(right_tree(tree))); /* swap root and left key  */
-//    set_left_tree(tree, right_tree(tree)); /* save right tree */
-//
-//    set_right_tree(tree, right_tree(right_tree(tree))); /* move sub right tree up */
-//    set_right_tree(left_tree(tree), left_tree(left_tree(tree)));/* move right-left tree to left-right position */
-//    set_left_tree(left_tree(tree), orig_left_tree);  /* move left tree down*/
-//
-//    update_weight(left_tree(tree));
-//}
-//
-
-
-//#define right_rotation_macro(tree)                                                \
-//    (                                                                       \
-//        (__temp__ = right_tree(tree)),/* save right right tree*/                                      \
-//        xor_swap(key(tree), key(left_tree(tree))), /* swap root and right keys ...*/ \
-//        set_right_tree(tree, left_tree(tree)), /* save left tree*/                              \
-//        set_left_tree(tree, left_tree(left_tree(tree))), /* move left sub tree up*/                    \
-//        set_left_tree(right_tree(tree), right_tree(right_tree(tree))), /* move left-right tree to right-left position */      \
-//        set_right_tree(right_tree(tree), __temp__), /* move right tree down */                         \
-//        update_weight(right_tree(tree))                                    \
-//    )
-//
-//void right_rotation(tree_type *tree)
-//{
-//    tree_type *orig_right_tree = right_tree(tree);/* save right right tree */
-//    xor_swap(key(tree), key(left_tree(tree))); /* swap root and right keys ...*/
-//    set_right_tree(tree, left_tree(tree)); /* save left tree */
-//
-//    set_left_tree(tree, left_tree(left_tree(tree))); /* move left sub tree up*/
-//    set_left_tree(right_tree(tree), right_tree(right_tree(tree))); /* move left-right tree to right-left position */      \
-//    set_right_tree(right_tree(tree), orig_right_tree); /* move right tree down */
-//
-//    update_weight(right_tree(tree));
-//}
-
 #define right_rotation_macro(tree) ({                           \
     typeof(tree) l_tree = left_tree(tree);                      \
     swap(key(tree),             key(l_tree));                   \
@@ -463,21 +235,6 @@ tree_type *allocate_tree() {
     swap(left_tree(tree),       right_tree(right_tree(tree)));  \
     update_weight(l_tree);                                      \
 })
-
-//#define right_rotation_macro(tree) ({                                   \
-//    typeof(tree) l_tree = left_tree(tree), r_tree = right_tree(tree);   \
-//    typeof(key(tree)) root_key = key(tree);                             \
-//                                                                        \
-//    set_key(tree, key(l_tree));                                         \
-//    set_key(l_tree, root_key);                                          \
-//                                                                        \
-//    set_right_tree(tree, l_tree);                                       \
-//    set_left_tree(tree, left_tree(l_tree));                             \
-//    set_left_tree(l_tree, right_tree(l_tree));                          \
-//                                                                        \
-//    set_right_tree(l_tree, r_tree);                                     \
-//    update_weight(l_tree);                                              \
-//})
 
 #define destroy_tree(tree) ({                                   \
     push_tree(tree);                                            \
@@ -511,17 +268,10 @@ tree_type *allocate_tree() {
     }                                                                                        \
 })
 
-#define init_tree(tree, _key) ({    \
-    set_key(tree, _key);            \
-    set_right_tree(tree, NULL);     \
-    set_weight(tree, 1);            \
-})
-
 
 void insert(tree_type *tree, unsigned int _key) {
     if (unlikely(is_empty_tree(tree))) {
-        init_tree(tree, _key);
-        set_left_tree(tree, (void *)-1);
+        init_empty_tree(tree, _key, (void *)-1);
         return ;
     }
 
@@ -530,27 +280,32 @@ void insert(tree_type *tree, unsigned int _key) {
         tree = (_key < key(tree)) ? left_tree(tree) : right_tree(tree);
     }
 
-    tree_type *left_node = allocate_tree(), *right_node = allocate_tree(); // add both leafs ...
+    tree_type *node_a = new_leaf(_key), *node_b = new_leaf(key(tree)); // add both leafs ...
     if (_key < key(tree)) {// new key is less than current leaf, move new to the left and previous key to the right ...
-        init_tree(left_node, _key);
-        init_tree(right_node, key(tree));
+        set_left_tree(tree, node_a);
+        set_right_tree(tree, node_b);
     } else {
-        init_tree(left_node, key(tree));
-        init_tree(right_node, _key);
+        set_left_tree(tree, node_b);
+        set_right_tree(tree, node_a);
         set_key(tree, _key);
     }
 
-    set_left_tree(tree, left_node);
-    set_right_tree(tree, right_node);
     update_weight(tree);
 
     balance_weight_tree(tree);
 }
 
+
+
+#define permutation_inversion_ms    permutation_inversion // permutation_inversion_ms seems to be the fastest method ...
+#define perm_from_inv_seq_ms        perm_from_inv_seq           // again seems to be the fastest ...
+
+
+
 // add a node to the tree and cnt the number of entries that are greater than it ...
 unsigned int permutation_vector_memb(tree_type *tree, unsigned int _key) {
     if (unlikely(is_empty_tree(tree))) {
-        init_tree(tree, _key), set_left_tree(tree, (void *)-1);
+        init_empty_tree(tree, _key, (void *)-1);
         return 0;
     }
 
@@ -562,18 +317,17 @@ unsigned int permutation_vector_memb(tree_type *tree, unsigned int _key) {
         tree = (_key < key(tree)) ? left_tree(tree) : right_tree(tree);
     }
 
-    tree_type *left_node = allocate_tree(), *right_node = allocate_tree(); // add both leafs ...
+    tree_type *leaf_a = new_leaf(_key), *leaf_b = new_leaf(key(tree)); // add both leafs ...
     if (_key < key(tree)) {// new key is less than current leaf, move new to the left and previous key to the right ...
-        init_tree(left_node, _key);
-        init_tree(right_node, key(tree));
+        set_left_tree(tree, leaf_a);
+        set_right_tree(tree, leaf_b);
         ++count_values_greater;
     } else {
-        init_tree(left_node, key(tree));
-        init_tree(right_node, _key), set_key(tree, _key);
+        set_left_tree(tree, leaf_b);
+        set_right_tree(tree, leaf_a);
+        set_key(tree, _key);
     }
 
-    set_left_tree(tree, left_node);
-    set_right_tree(tree, right_node);
     update_weight(tree);
 
     balance_weight_tree(tree);
@@ -581,15 +335,12 @@ unsigned int permutation_vector_memb(tree_type *tree, unsigned int _key) {
     return count_values_greater;
 }
 
-#define permutation_inversion_ms permutation_inversion // permutation_inversion_ms seems to be the fastest method ...
-
 // n log n solution: gets the inversion sequence of a giving permutation,
 //  where a permutation is made up of values from [0, perm_length - 1] without repetitions.
 //  an inversion sequence with indices with value a[j] from 0 to n - 1, where a[j] is sum(permutation[0:index_of(j)] > j)
 //  basically we are counting all the values preceding j that are greater than j.
 void permutation_inversion_wt(perm_elem_type *perm, perm_elem_type *dest, unsigned int perm_length) {
-    tree_type *tree = allocate_tree_macro();
-    set_left_tree(tree, NULL);
+    tree_type *tree = new_empty_tree();
 
     unsigned word_t index;
     for (index = 0; index < perm_length; index++) // cnt greater elements preceding elemnt at i
@@ -602,7 +353,7 @@ void permutation_inversion_wt(perm_elem_type *perm, perm_elem_type *dest, unsign
 // split the permutation in half apply recursively on each half, until a single element is reached,
 // then return (assuming the cnts have already being initialized to zeros ...)
 // when returning both halfs have being sorted in ascending order
-// when merging every time we take a righ element all the remaining left elements are both bigger and prededing it
+// when merging every time we take a righ element all the remaining left elements are both bigger and preceeding it
 // so increment the count for this entry ...
 void _permutation_inversion_ms(perm_elem_type *perm, perm_elem_type *dest, unsigned int perm_length) {
     if (perm_length < 2)
@@ -689,17 +440,9 @@ unsigned int inv_permutation_vector_memb(tree_type *tree, unsigned int _weight) 
     return _key;
 }
 
-#define perm_from_inv_seq_wt perm_from_inv_seq
-
 // gets a permutation from its inverse sequence where each entry i in the inversion sequence
 // is the number of empty places to left of i.
 void perm_from_inv_seq_wt(perm_elem_type *inv_seq, perm_elem_type *dest, unsigned int perm_length) {
-//    if (__builtin_expect(perm_length == 0 || is_null(inv_seq) || is_null(dest), 0))
-//        return ;
-//    if (__builtin_expect(perm_length == 1, 0)) {
-//        *dest = 0;
-//        return ;
-//    }
 
     unsigned word_t index = 0;
     // build a weight balance binary tree containing 0 .. perm_length - 1 keys
@@ -726,10 +469,6 @@ void perm_from_inv_seq_wt(perm_elem_type *inv_seq, perm_elem_type *dest, unsigne
             stack[index++] = (typeof(stack[0])){.start = key(_parent),  .tree = right_t};
             stack[index++] = (typeof(stack[0])){.start = start,         .tree = left_t};
         }
-//    tree_type *tree = allocate_tree();
-//    set_left_tree(tree, NULL);
-//    for (index = 0; index < perm_length; index++)
-//        insert(tree, index);
 
     for (index = 0; index < perm_length; index++)
         dest[inv_permutation_vector_memb(tree, inv_seq[index])] = index;
@@ -737,65 +476,50 @@ void perm_from_inv_seq_wt(perm_elem_type *inv_seq, perm_elem_type *dest, unsigne
     recycle_tree(tree);
 }
 
-// get permutation from inversion vector using divide & conquer ...
-// we want indices to contain the index of element i for indices[i] so perm[indices[i]] = i
-// for |n| == 1 this is obviously true since there no other entries
-// for |n| > 1 we need to account for all the indices that have being previously inserted
-// to merge take the whole left since it contains the indices for elements [0 ... n/2)
-// the right contains the indices for elements [n/2 ... n - 1)
-// we need update the right in order to take into account all the previous entries
-// take the whole left and start taking a right element, count
-// since they would oviously shift the entry to the right ...
-
-
-// naive approach: initilize dest to inv_vect,
+// naive approach (n^2): initilize dest to inv_vect,
 // iterate backwards over dest at each index i, check all the elements starting at i + 1
 // are greater than or equal to dest[i], if they are increment those that are otherwise continue
 // in essence we are shifting conflicting positions ...
 // once complete argsort dest
 
-// divide & conquer:
-// divide indices & dest in half, apply recursively to each half upon returning
-//  at indices[i] contains the location of i within the permutation, and dest contains its argsort (permutation).
-// to merge:
-// we want to both update the offsets (to account for previous entries) and merge the locations
-// we do this by iterating each half offsets in their corresponding ascending manner using their agsort ...
-// if the left is smaller than or equal to
-// the entry on the (right + all the elements on the left that are smaller than it, those that have being taken already),
-// no need to update, simply consume left loc.
-// otherwise the right is smaller so is its location is its loc plus the number of elements on the right,
-// and we also add the number of elements to the right that have already being taken (ie they are smaller than it)
-// once exhausted take all the remaining left indices or
-// take all the remaining right indices on the right plus the number of right elements
-// update each entry with the number of right elements since they are all smaller than it.
+// divide & conquer (n log n):
+// assuming indices have being initialized with the identity permutation [0 ... n - 1]
+// divide the indices in half and apply recursively, until a single element is reached then nothing to do so just return.
+// upon retuning we can assume that:
+// 1) the indices, have being sorted in ascending order based on the offsets.
+// 2) offsets have being shifted so as to take into account all the preceding offsets, that are smaller than it.
+// In order to maintain both this properties we:
+// when we merge, we iterate over each half in ascending order using the indices
+// if the current left magnitude is less than the current right_magnitude shifted than
+// nothing to do take left and continue.
+// otherwise left magnitude is greater than right shifted (ie it supercedes it) so update right and take right index ...
 void _perm_from_inv_seq_ms(perm_elem_type *offsets, perm_elem_type *indices, unsigned int cnt) {
     if (cnt < 2)
         return ;
 
     typeof(cnt) left_cnt = half(cnt), right_cnt = cnt - left_cnt;
-    typeof(offsets) left = offsets, right = &offsets[left_cnt];
     typeof(indices) left_indices = indices, right_indices = &indices[left_cnt];
 
-    _perm_from_inv_seq_ms(left,  left_indices,  left_cnt);
-    _perm_from_inv_seq_ms(right, right_indices, right_cnt);
+    _perm_from_inv_seq_ms(offsets,  left_indices,  left_cnt);
+    _perm_from_inv_seq_ms(offsets, right_indices, right_cnt);
 
     typeof(indices[0]) argsort[cnt];
     unsigned word_t index, left_index = 0;
-    for (index = 0; (left_index < left_cnt) && right_cnt; index++)
-        if (left[left_indices[left_index]] <= (right[*right_indices] + left_index))  // take left entry ...
-            argsort[index] = left_indices[left_index++];
+    for (index = 0; (left_index < left_cnt) && right_cnt; index++) {
+        if (offsets[left_indices[left_index]] <= (offsets[*right_indices] + left_index))
+            argsort[index] = left_indices[left_index++]; // take left entry ...
         else {
-            argsort[index] = left_cnt + *right_indices;
-            right[*right_indices++] += left_index; // update right to account for all the entries that are smaller than it.
+            argsort[index] = *right_indices;
+            offsets[*right_indices++] += left_index; // update right to account for all the entries that are smaller than it.
             right_cnt--;
         }
+    }
 
-    if (right_cnt)
-        while (right_cnt--) {
-            argsort[index++] = half(cnt) + *right_indices;
-            right[*right_indices++] += left_index;
-        }
-    else
+    if (right_cnt) { // copy and update any remaining entries ...
+        memcpy(&argsort[index], right_indices, right_cnt * sizeof(right_indices[0]));
+        for (index = 0; index < right_cnt; index++)
+            offsets[right_indices[index]] += left_index; // left_cnt == left_index
+    } else
         memcpy(&argsort[index], &left_indices[left_index], (left_cnt - left_index) * sizeof(left_indices[0]));
 
     memcpy(indices, argsort, sizeof(argsort));
@@ -803,14 +527,17 @@ void _perm_from_inv_seq_ms(perm_elem_type *offsets, perm_elem_type *indices, uns
 
 void perm_from_inv_seq_ms(perm_elem_type *inversion_vect, perm_elem_type *perm, unsigned int cnt) {
     typeof(inversion_vect[0]) buffer[cnt];
+    unsigned word_t index;
+    for (index = 0; index < cnt; index++)
+        perm[index] = index;
+
     _perm_from_inv_seq_ms(
-        memcpy(buffer, inversion_vect, sizeof(buffer)),
-        memset(perm, 0, sizeof(perm[0]) * cnt),
-        cnt
+        memcpy(buffer, inversion_vect, sizeof(buffer)), perm, cnt
     );
 }
 
-// naive approach simply count the number of empty space to the left
+// generate permutation perm based on its inversion vector.
+// naive approach (n^2) simply count the number of empty slots to the left
 void perm_from_inv_seq_naive(perm_elem_type *inversion_vect, perm_elem_type *perm, unsigned int cnt) {
     memset(perm, -1, sizeof(perm[0]) * cnt);
 
@@ -829,8 +556,8 @@ void perm_from_inv_seq_naive(perm_elem_type *inversion_vect, perm_elem_type *per
 }
 
 
-void random_perm(perm_elem_type *dest, unsigned cnt) {
-    unsigned index;
+void random_perm(perm_elem_type *dest, unsigned cnt) { // knuth shuffle ...
+    unsigned word_t index;
     for (index = 0; index < cnt; index++) { // randomly swap two positions ...
         typeof(index) swap_index = rand() % (index + 1); // pick a previously inserted value ...
         dest[index] = dest[swap_index]; // swap it with current ...
@@ -851,47 +578,27 @@ int main() {
 //    unsigned count = sizeof(values)/sizeof(values[0]);
 //    perm_elem_type values[] = {4, 1, 5, 2, 0, 3};
 
-    unsigned count = 60000;
+    unsigned count = 100000;
     perm_elem_type values[count];
     random_perm(values, count);
-//    int index;
 
     perm_elem_type inv_perm[count];
 
-    #define REPEAT_CNT 1
-
     #define perm_inv_naive() ({permutation_inversion_naive(values, inv_perm, count); })
-//    #define timed_perm_inv_naive() timeit_repeat(perm_inv_naive, REPEAT_CNT)
     printf("permutation_inversion_naive: %.4fs \n", timed(perm_inv_naive));
-//    permutation_inversion_naive(values, inv_perm, count);
-//    for (index = 0; index < count; index++)
-//        printf("%u ", inv_perm[index]);
-//    printf("\n");
 
     typeof(inv_perm) inv_perm_wt;
     #define perm_inv_wt() ({permutation_inversion_wt(values, inv_perm_wt, count);})
-//    #define timed_perm_inv_tree() timeit_repeat(perm_inv_tree, REPEAT_CNT)
     printf("permutation_inversion_wt: %.4fs ", timed(perm_inv_wt));
-    printf( (memcmp(inv_perm_wt, inv_perm, sizeof(inv_perm))) ? "failed!! \n": "ok. \n");
+    printf((memcmp(inv_perm_wt, inv_perm, sizeof(inv_perm))) ? "failed!! \n": "ok. \n");
 
 
     typeof(inv_perm) inv_perm_ms;
     #define perm_inv_ms() ({permutation_inversion_ms(values, inv_perm_ms, count);})
-//    #define timed_perm_inv_ms() timeit_repeat(perm_inv_ms, REPEAT_CNT)
     printf("permutation_inversion_ms: %.4fs ", timed(perm_inv_ms));
-    printf( (memcmp(inv_perm_ms, inv_perm, sizeof(inv_perm))) ? "failed!! \n" : "ok. \n");
-//    permutation_inversion_ms(values, inv_perm, count);
-//    for (index = 0; index < count; index++)
-//        printf("%u ", inv_perm[index]);
-//    printf("\n");
-
-//    permutation_inversion_wt(values, inv_perm, count);
-//    for (index = 0; index < count; index++)
-//        printf("%u ", inv_perm[index]);
-//    printf("\n");
+    printf((memcmp(inv_perm_ms, inv_perm, sizeof(inv_perm))) ? "failed!! \n" : "ok. \n");
 
     printf("\n");
-
 
     typeof(values) values_ms;
     #define inv_ms() ({ perm_from_inv_seq_ms(inv_perm, values_ms, count); })
@@ -908,8 +615,6 @@ int main() {
     #define inv_naive() ({ perm_from_inv_seq_naive(inv_perm, values_naive, count); })
     printf("perm_from_inv_seq_naive: %.4fs ", timed(inv_naive));
     printf((memcmp(values_naive, values, sizeof(values))) ? "failed!!\n" : "ok.\n");
-
-
 
     return 0;
 }

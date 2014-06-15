@@ -74,11 +74,9 @@ def permutation_from_inversion(inv_seq):  # get a permutation from its inverse s
 
 try:
     libo = CDLL(os.path.join(os.path.dirname(__file__), 'libutils.so'))
-    libo.collisions.argtypes = [c_void_p, c_uint]
-    libo.collisions.restype = c_uint
 
-    libo.diag_collisions.argtypes = libo.collisions.argtypes
-    libo.collisions.restype = libo.collisions.restype
+    libo.diag_collisions.argtypes = [c_void_p, c_uint]
+    libo.diag_collisions.restype = c_uint
 
     libo.permutation_inversion.argtypes = [c_void_p, c_void_p, c_uint]
     libo.perm_from_inv_seq.argtypes = libo.permutation_inversion.argtypes
