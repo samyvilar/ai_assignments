@@ -8,9 +8,12 @@ import random
 import math
 import numpy
 import hashlib
+import logging
 
 import os
 from ctypes import CDLL, POINTER, c_ubyte, c_uint, c_void_p
+
+board_element_type = 'uint32'
 
 
 def diagonals(a):
@@ -39,15 +42,15 @@ def diagonals(a):
 # there's any queens in between
 # 2) go over each diagnol and count the number of queens there,
 # the number of collision per diagonal is min(number of queens, 1) - 1
-def py_diagonal_collisions(col_cords):
+def py_diagonal_collisions(perm):
     return (
         sum(
             imap(
                 numpy.equal,
-                imap(numpy.abs, starmap(numpy.subtract, product(*repeat(numpy.arange(len(col_cords)), 2)))),
-                imap(numpy.abs, starmap(numpy.subtract, product(*repeat(col_cords, 2))))
+                imap(numpy.abs, starmap(numpy.subtract, product(*repeat(numpy.arange(len(perm)), 2)))),
+                imap(numpy.abs, starmap(numpy.subtract, product(*repeat(perm, 2))))
             )
-        ) - len(col_cords)  # subtract n queens since since a queen is always colliding with itself ...
+        ) - len(perm)  # subtract n queens since since a queen is always colliding with itself ...
     )  # divide by 2 since the attacks are symmetrical ...
 
 
@@ -64,12 +67,12 @@ def ipermutation_inversion(perm):  # get the inverse permutation ...
     return imap(numpy.sum, ((perm[:index] > perm[index]) for index in numpy.argsort(perm)))
 
 
-def permutation_from_inversion(inv_seq):  # get a permutation from its inverse sequence ...
-    inv_seq = numpy.asarray(inv_seq if hasattr(inv_seq, '__getitem__') else tuple(inv_seq), dtype=numpy.uint8)
+def py_permutation_from_inversion(inv_seq):  # get a permutation from its inverse sequence ...
+    inv_seq = numpy.asarray(inv_seq if hasattr(inv_seq, '__getitem__') else tuple(inv_seq), dtype=board_element_type)
     pos = inv_seq.copy()
     for i in reversed(xrange(len(inv_seq))):
         pos[i + 1:] += pos[i + 1:] >= inv_seq[i]
-    return numpy.argsort(pos).astype(numpy.uint8)
+    return numpy.argsort(pos).astype(board_element_type)
 
 
 try:
@@ -81,27 +84,27 @@ try:
     libo.permutation_inversion.argtypes = [c_void_p, c_void_p, c_uint]
     libo.perm_from_inv_seq.argtypes = libo.permutation_inversion.argtypes
 
-    def diagonal_collisions(solution):
-        assert solution.dtype == numpy.uint8
-        return libo.diag_collisions(c_void_p(solution.ctypes.data), c_uint(solution.shape[0]))
-        # return libo.collisions(c_void_p(solution.ctypes.data), c_uint(solution.shape[0]))
+    def diagonal_collisions(perm):  # return the number of collisions on the diagonals of
+        assert perm.dtype == numpy.uint32
+        return libo.diag_collisions(c_void_p(perm.ctypes.data), c_uint(len(perm)))
 
     def permutation_inversion(perm):
-        assert perm.dtype == numpy.uint8
-        result = numpy.empty(len(perm), dtype=numpy.uint8)
+        assert perm.dtype == numpy.uint32
+        result = numpy.empty(len(perm), dtype=perm.dtype)
         libo.permutation_inversion(c_void_p(perm.ctypes.data), c_void_p(result.ctypes.data), c_uint(len(perm)))
         return result
 
     def permutation_from_inversion(inv_seq):
-        assert inv_seq.dtype == numpy.uint8
-        result = numpy.empty(len(inv_seq), dtype=numpy.uint8)
+        assert inv_seq.dtype == numpy.uint32
+        result = numpy.empty(len(inv_seq), dtype=inv_seq.dtype)
         libo.perm_from_inv_seq(c_void_p(inv_seq.ctypes.data), c_void_p(result.ctypes.data), c_uint(len(inv_seq)))
         return result
 
-except OSError as _:
-    print 'error'
+except OSError as er:
+    logging.warning('Failed to load corresponding C implementations: {0}'.format(er))
     diagonal_collisions = py_diagonal_collisions
     permutation_inversion = ipermutation_inversion
+    permutation_from_inversion = py_permutation_from_inversion
 
 
 # make sure to properly set the cache size, depending on the the system
@@ -132,8 +135,6 @@ def calc_collision(solution, cache=defaultdict(defaultdict), cache_size_bytes=3 
 
     #return diag_cols
 
-board_element_type = 'ubyte'
-
 
 def irow(length, set_column=0):
     return chain(repeat(0, set_column), (1,), repeat(0, length - set_column - 1))
@@ -152,10 +153,10 @@ def new_random_board(number_of_queens):
     # return board
 
 
-def new_initialized_board(columns, dtype=board_element_type):
+def new_initialized_board(perm, dtype=board_element_type):  # create n by n matrix containing 1 at row i, column perm[i]
     return numpy.fromiter(
-        chain.from_iterable(imap(irow, repeat(len(columns)), columns)), dtype=board_element_type, count=len(columns)**2
-    ).reshape((len(columns), len(columns)))
+        chain.from_iterable(imap(irow, repeat(len(perm)), perm)), dtype=board_element_type, count=len(perm)**2
+    ).reshape((len(perm), len(perm)))
 
 
 def columns(board):

@@ -41,7 +41,7 @@ from numpy import cumsum, sum, divide
 from numpy.random import random
 
 from utils import calc_collision, diagonal_collisions, sample, items, item, ipermutation_inversion, permutation_inversion, permutation_from_inversion
-from utils import new_initialized_board, swap, board_element_type
+from utils import new_initialized_board, swap, board_element_type, board_element_type
 
 
 def genetic_algorithm(
@@ -150,7 +150,7 @@ def solve_n_queens_problem(number_of_queens, population_size=10**3, max_iteratio
         sorted(
             starmap(
                 sample,
-                repeat((numpy.arange(number_of_queens, dtype=numpy.uint8), number_of_queens), population_size)
+                repeat((numpy.arange(number_of_queens, dtype=board_element_type), number_of_queens), population_size)
             ),
             key=fitness_function,
             reverse=True

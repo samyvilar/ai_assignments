@@ -107,7 +107,7 @@
 })
 
 
-#define perm_elem_type unsigned char
+#define perm_elem_type unsigned
 
 // diaganol collision occur between two points when there |delta(x cords)| == |delta(y cords)|
 // ie the mag in their corresponding x and y coordinates equal
@@ -145,7 +145,7 @@ unsigned int diag_collisions(perm_elem_type *col_cords, unsigned int board_size)
 
 // weight balanced tree ...
 #define TREE_BLOCK_MAG 128
-#define ALPHA    0.22 //0.288
+#define ALPHA    0.288
 #define EPSILON  0.005
 typedef struct tree_type {
     struct tree_type
